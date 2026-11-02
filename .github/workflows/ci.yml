@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Code style, static analysis, dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          coverage: none
+      - uses: ramsey/composer-install@v3
+      - run: composer validate --strict --no-check-lock
+      - run: composer lint
+      - run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+      - run: vendor/bin/phpstan analyse -c phpstan-bridges.neon.dist --memory-limit=1G --no-progress
+      - run: composer deps
+
+  tests:
+    name: PHP ${{ matrix.php }} (${{ matrix.deps }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.2', '8.3', '8.4', '8.5']
+        deps: [lowest, highest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: curl, json
+          coverage: none
+      - uses: ramsey/composer-install@v3
+        with:
+          dependency-versions: ${{ matrix.deps }}
+      - run: vendor/bin/phpunit --testsuite unit,examples,bridge
+
+  frameworks:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: 'Laravel 10 + Symfony 6.4', php: '8.1', packages: 'orchestra/testbench:^8.0 symfony/framework-bundle:^6.4 symfony/http-client:^6.4' }
+          - { name: 'Laravel 11 + Symfony 7.4', php: '8.2', packages: 'orchestra/testbench:^9.0 symfony/framework-bundle:^7.4 symfony/http-client:^7.4' }
+          - { name: 'Laravel 12', php: '8.3', packages: 'orchestra/testbench:^10.0' }
+          - { name: 'Laravel 13 + Symfony 8', php: '8.4', packages: 'orchestra/testbench:^11.0 symfony/framework-bundle:^8.0 symfony/http-client:^8.0' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - run: composer require --dev --no-update ${{ matrix.packages }}
+      - run: composer update --prefer-dist --no-interaction -W
+      - run: vendor/bin/phpunit --testsuite bridge
+      - run: vendor/bin/phpstan analyse -c phpstan-bridges.neon.dist --memory-limit=1G --no-progress
+
+  without-curl:
+    name: Core without ext-curl
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: :curl
+          coverage: none
+      # Only the test runner: proves the core installs and works with nothing but ext-json.
+      - run: |
+          composer remove --dev --no-update orchestra/testbench symfony/framework-bundle symfony/http-client guzzlehttp/guzzle psr/log friendsofphp/php-cs-fixer phpat/phpat phpstan/phpstan phpstan/phpstan-strict-rules shipmonk/composer-dependency-analyser
+          composer update --prefer-dist --no-interaction
+      - name: ext-curl is really absent
+        run: |
+          php -r 'exit(extension_loaded("curl") ? 1 : 0);'
+      - run: vendor/bin/phpunit --testsuite unit
+
+  archive:
+    name: Install from the distribution archive
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          coverage: none
+      - run: composer archive --format=zip --dir=build --file=package
+      - name: docs and examples are shipped, tests are not
+        run: |
+          unzip -l build/package.zip | grep -q 'docs/webhooks.md'
+          ! unzip -l build/package.zip | grep -q ' tests/'
+      - name: install into a clean project
+        run: |
+          mkdir -p /tmp/app && cd /tmp/app
+          composer init -n --name=check/app
+          composer config repositories.sdk "{\"type\":\"artifact\",\"url\":\"$GITHUB_WORKSPACE/build\"}"
+          composer require "enigmoss/enigmoss-php:*@dev" --prefer-dist
+          php -r 'require "vendor/autoload.php"; new Enigmoss\ClientConfig("https://api.example.com", "3f2b8c1e-5d4a-4e7b-9c6f-1a2b3c4d5e6f", new Enigmoss\Secret("k")); echo "ok\n";'

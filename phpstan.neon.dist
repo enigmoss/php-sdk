@@ -1,0 +1,25 @@
+includes:
+    - vendor/phpstan/phpstan-strict-rules/rules.neon
+    - vendor/phpat/phpat/extension.neon
+
+parameters:
+    level: max
+    phpVersion: 80100
+    paths:
+        - src
+        - tests
+    excludePaths:
+        # Framework bridges are analysed in their own CI cells with the framework installed.
+        - src/Bridge/Laravel (?)
+        - src/Bridge/Symfony (?)
+        - src/Bridge/Psr18 (?)
+        - tests/Bridge (?)
+        - tests/Support/Symfony (?)
+    phpat:
+        ignore_built_in_classes: true
+
+services:
+    -
+        class: Enigmoss\Tests\Architecture\LayerTest
+        tags:
+            - phpat.test

@@ -1,0 +1,27 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+// Copies the language-neutral contract fixtures (*.json) from a directory into
+// tests/Fixtures/contract and records their revision.
+//
+//   php bin/sync-contract <directory> [<revision>]
+
+$from = rtrim($argv[1] ?? '', '/');
+$revision = $argv[2] ?? 'unknown';
+$to = dirname(__DIR__) . '/tests/Fixtures/contract';
+
+if ($from === '' || !is_dir($from)) {
+    fwrite(STDERR, "Usage: bin/sync-contract <directory> [<revision>]\n");
+    exit(2);
+}
+
+$copied = 0;
+foreach (glob($from . '/*.json') ?: [] as $file) {
+    copy($file, $to . '/' . basename($file));
+    ++$copied;
+}
+
+file_put_contents($to . '/SOURCE', $revision . "\n");
+echo "Copied {$copied} file(s), revision {$revision}.\n";

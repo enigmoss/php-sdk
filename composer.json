@@ -1,0 +1,86 @@
+{
+    "name": "enigmoss/enigmoss-php",
+    "description": "Official PHP SDK for the Enigmoss Project API v4: payments, static wallets, payouts, refunds, transfers and signed webhooks.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "enigmoss",
+        "crypto",
+        "payments",
+        "payouts",
+        "project",
+        "sdk",
+        "webhooks"
+    ],
+    "require": {
+        "php": "^8.1",
+        "ext-json": "*"
+    },
+    "require-dev": {
+        "friendsofphp/php-cs-fixer": "^3.64",
+        "guzzlehttp/guzzle": "^7.8 || ^8.0",
+        "orchestra/testbench": "^8.0 || ^9.0 || ^10.0 || ^11.0",
+        "phpat/phpat": "^0.11",
+        "phpstan/phpstan": "^2.1",
+        "phpstan/phpstan-strict-rules": "^2.0",
+        "phpunit/phpunit": "^10.5 || ^11.5 || ^12.0",
+        "psr/log": "^1.1 || ^2.0 || ^3.0",
+        "shipmonk/composer-dependency-analyser": "^1.8",
+        "symfony/framework-bundle": "^6.4 || ^7.4 || ^8.0",
+        "symfony/http-client": "^6.4 || ^7.4 || ^8.0"
+    },
+    "suggest": {
+        "ext-curl": "Required by the built-in default transport (CurlTransport).",
+        "psr/http-client": "Use any PSR-18 client through Enigmoss\\Bridge\\Psr18\\Psr18Transport.",
+        "psr/http-factory": "PSR-17 factories for the PSR-18 transport.",
+        "laravel/framework": "Laravel 10+: auto-discovered EnigmossServiceProvider, facade, webhook route.",
+        "symfony/http-kernel": "Symfony 6.4+: EnigmossBundle, webhook argument resolver.",
+        "psr/log": "Log SDK calls through Enigmoss\\Bridge\\Psr3\\LoggerObserver.",
+        "ext-pdo": "Enigmoss\\Webhook\\PdoWebhookDeduplicator: atomic webhook deduplication in your database."
+    },
+    "autoload": {
+        "psr-4": {
+            "Enigmoss\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Enigmoss\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Enigmoss\\Bridge\\Laravel\\EnigmossServiceProvider"
+            ],
+            "aliases": {
+                "Enigmoss": "Enigmoss\\Bridge\\Laravel\\Facades\\Enigmoss"
+            }
+        }
+    },
+    "scripts": {
+        "test": "phpunit --testsuite unit,examples,bridge",
+        "test:e2e": "phpunit --testsuite e2e",
+        "lint": "php-cs-fixer fix --dry-run --diff --allow-risky=yes",
+        "fix": "php-cs-fixer fix --allow-risky=yes",
+        "analyse": [
+            "phpstan analyse --memory-limit=1G",
+            "phpstan analyse -c phpstan-bridges.neon.dist --memory-limit=1G"
+        ],
+        "deps": "composer-dependency-analyser",
+        "check": [
+            "@lint",
+            "@analyse",
+            "@deps",
+            "@test"
+        ]
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "phpstan/extension-installer": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

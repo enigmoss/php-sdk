@@ -1,0 +1,134 @@
+# Enigmoss PHP SDK (enigmoss/enigmoss-php), for AI coding assistants
+Namespace Enigmoss\. PHP >= 8.1, no runtime deps (ext-json; ext-curl for default transport). Project API v4. Docs: README.md, docs/*.md
+
+## Rules that must not be broken
+- Money is ALWAYS a decimal string ("10.50"), never float. Dates are UTC (DateTimeImmutable).
+- Base URL is white-label: "your API host from the dashboard"; placeholder https://api.example.com. SDK appends /api/v4.
+- Two keys. PAYMENT key: payments, wallets, AML links, balances, transactions, payment-method discount PATCH, events journal, test webhooks, verifying incoming webhooks. PAYOUT key: payouts, quotes, refunds, transfers (IP whitelist applies; a disallowed IP -> IpNotAllowedException, code auth.ip_forbidden only). EITHER: project->get, paymentMethods->list, exchangeRates->list, payoutMethods->list/get.
+- Wrap keys in Secret. Requests are HMAC-SHA256 signed automatically (300 s clock window; SDK corrects drift once).
+- Create calls derive Idempotency-Key from order_id: repeat = stored response (24 h; later ConflictException with isOrderIdTaken()). One order_id = one object FOREVER (a failed payout keeps its order_id).
+- ONLY 2xx responses are stored under the key. A rejected (4xx) create made nothing: it may be repeated with the SAME order_id after the cause is fixed (e.g. top up after payout.insufficient_funds).
+- If an exception's outcomeUnknown() is true: NEVER make a new order_id and do not repeat create in the same request: see "Three outcomes".
+- Ids passed to get()/cancel()/block()... are UUIDs, validated locally (InvalidArgumentException). order_id is free-form (1-128 of A-Za-z0-9-_).
+- A webhook for payout.* and refund.* is verified with the PAYMENT key (balances->list() needs the payment key too). Block + refund of a wallet needs BOTH keys.
+- There is no sandbox/test mode. Develop with MockTransport/Fixtures, or ENIGMOSS_EXAMPLE_MOCK=<scenario> php examples/<name>.php (scenarios: happy, order_taken, in_progress, unknown_found, unknown_pending). Money examples exit 3 = pending reconcile.
+- SDK retries safely; on money-creating endpoints it never retries business errors.
+- Rate limits: 60 req/min/IP; payouts 10/min, refunds 1/min per project. RateLimitException::$retryAfter.
+- Enums can gain cases: always keep a default arm (Unknown case exists). Use isFinal.
+- Fulfilment rule (the ONLY one): $payment->isSuccessful() = status->isPaid() && isFinal. A Paid payment can be non-final while an automatic conversion settles. A deposit to a static wallet has walletId !== null and orderId === null: branch on walletId first.
+- Request DTO constructor parameter NAMES are API (use named args). Response model constructors and Enigmoss\Internal are NOT API.
+- Client is stateless, shareable, NOT serializable (do not put in queue payloads).
+
+## Setup
+use Enigmoss\{ClientConfig, EnigmossClient, Secret};
+$e = new EnigmossClient(new ClientConfig(baseUrl:'https://api.example.com', projectId:'<uuid>', paymentKey:new Secret($k), payoutKey:new Secret($p)));
+ClientConfig(baseUrl, projectId, ?Secret paymentKey, ?Secret payoutKey, float timeout=30, float connectTimeout=10, int maxRetries=2, float maxRetryDelay=10, int webhookTolerance=300, bool allowInsecureHttp=false, ?AppInfo appInfo)
+new EnigmossClient(ClientConfig, ?TransportInterface $transport, ?ClockInterface, ?SleeperInterface, list<ObserverInterface> $observers)
+$e->withCredentials(projectId, ?Secret paymentKey, ?Secret payoutKey): EnigmossClient   // shares transport/observers
+$e->config(): ClientConfig
+$e->request(method, path, ?array body, KeyScope scope=Payment, array query=[], bool idempotent=false, ?RequestOptions): RawResponse  // any endpoint; path after /api/v4
+Every service method takes optional last arg ?RequestOptions(idempotencyKey, timeout, maxRetries, maxRetryDelay, headers, extraBody, extraQuery, onResponse: Closure(ResponseInfo))
+
+## Services ($e->...)
+project->get(): Project{id,name,keyType,permissions,serverTime}
+payments (payment key):
+  create(CreatePaymentRequest): Payment            // perm payment_create_invoice; paymentUrl is ?string (check before redirect)
+  get(id) / findByOrderId(orderId): ?Payment / list(?ListPaymentsQuery): CursorPage / iterate(?ListPaymentsQuery): Generator   // info_payments
+  cancel(id) // payment_cancel   markPaid(id) // payment_mark_paid   createAmlVerificationLinks(id): list<AmlVerificationLink> // info_payments
+  CreatePaymentRequest(amount, currencyCode, orderId, ?settlementCurrencyCode, ?networkCode, ?returnUrl, ?successUrl, ?callbackUrl, ?expiresIn 300-43200, ?allowMultiplePayments, ?customerFeePercent, ?underpaymentTolerancePercent, ?discountPercent, ?list<PaymentMethodRef> allowedMethods, ?excludedMethods, ?customerEmail, array|stdClass metadata, ?description<=150, ?Theme theme, ?referralCode)
+  ListPaymentsQuery(orderId, walletId, status, createdFrom, createdTo, limit 1-50, cursor)
+  Payment{id,orderId,walletId,status,isFinal,failureCode,amount,currencyCode,payer,paid,settlement,conversion,discount,txHash,paymentUrl,expiresAt,createdAt,updatedAt,paidAt,description,metadata}
+  PaymentStatus: Pending Processing Confirming Paid Overpaid Underpaid UnderpaidWaiting Expired Cancelled Failed Locked Refunding Refunded RefundFailed Unknown; ->isPaid() (Paid, Overpaid); Payment::isSuccessful()
+  Retry for an order after Expired/Cancelled: NEW invoice with a new order_id (<order>-<attempt>). Decide by webhook status.
+wallets (payment key): create(CreateWalletRequest(currencyCode, networkCode, orderId, ?callbackUrl, ?referralCode)) // payment_create_static_wallet
+  get/findByOrderId/list(ListWalletsQuery)/iterate // info_payments   block(id, bool refundIncoming=false) // wallet_block, refundIncoming fixed at first block
+  Wallet{id,orderId,currencyCode,networkCode,address,status,refundIncoming,callbackUrl,paymentUrl,createdAt,updatedAt}. Deposits = Payment with walletId (list payments by walletId; findByOrderId does not find deposits).
+refunds (payout key, perm payment_refund, 1/min): createForPayment(paymentId, CreatePaymentRefundRequest(orderId, address, ?amount, ?feeDeductedFromAmount, ?callbackUrl)); createForWallet(walletId, CreateWalletRefundRequest(orderId, address, ?callbackUrl)); get/findByOrderId/list(ListRefundsQuery)/iterate
+payouts (payout key, 10/min): quote(QuotePayoutRequest(amount,currencyCode,address,?networkCode,?recipientCurrencyCode,?sourceCurrencyCode,?feeDeductedFromAmount,?RateSource,?PayoutPriority)): PayoutQuote // payout_create
+  QUOTE IS NOT BINDING (no quote id / max fee in create): check $payout->charged after create. Use NAMED arguments for QuotePayoutRequest/CreatePayoutRequest: rateSource: RateSource::Binance, priority: PayoutPriority::Economy.
+  create(CreatePayoutRequest(orderId,amount,currencyCode,address,?networkCode,?memo,?recipientCurrencyCode,?sourceCurrencyCode,?feeDeductedFromAmount,?rateSource,?priority,?callbackUrl)): Payout // payout_create
+  get(id) // info_payout   findByOrderId/list(ListPayoutsQuery)/iterate // info_payouts_list
+  Payout{id,orderId,status,isFinal,failureCode(?string),amount,currencyCode,networkCode,address,memo,priority,recipient,charged,conversion,txHash,createdAt,updatedAt}
+  PayoutStatus: Pending Processing AwaitingApproval Completed Failed Cancelled Unknown. PayoutPriority: Recommended Economy High Highest Unknown. RateSource: Binance BinanceP2p Exmo Garantexio Kucoin.
+transfers (payout key, perm transfer_to_personal): create(CreateTransferRequest(orderId, amount<=8 decimals, currencyCode)), get, findByOrderId, list(ListTransfersQuery), iterate
+balances->list(): list<Balance{currencyCode,balance,balanceUsd}>  // info_balance
+transactions->list(?ListTransactionsQuery(type,createdFrom,createdTo,limit,cursor)) / iterate  // info_transactions_history
+paymentMethods->list() (either key): list<PaymentMethod>; updateDiscount(currency, network, int -99..90) // payment_settings (payment key)
+payoutMethods->list(); get(currency, network): PayoutMethodDetails (min/max, decimals, isMemoAvailable, priorities)
+exchangeRates->list(?string from): list<ExchangeRate{from,to,rate}>
+events (payment key, perm webhooks, kept 60 days): list(?ListEventsQuery)/iterate/get(id)/redeliver(id)/redeliverBulk(BulkRedeliverRequest(createdFrom,...))
+  EventRecord{id,event,objectType,objectId,deliveryStatus,createdAt,payload:WebhookEvent,attempts}. Replay missed webhooks: foreach events->iterate(...) as $r: handle($r->payload).
+webhooks: constructEvent(rawBody, headers): WebhookEvent; verifier(): WebhookVerifier; sendTest(?callbackUrl): EventRecord // 10/min
+
+## Pagination
+list() -> CursorPage{items,nextCursor,prevCursor,perPage,hasMore,info}; iterable, countable, first(). Query->withCursor(?string). iterate() is a lazy Generator. findByOrderId() = reconcile.
+
+## Webhooks
+Signed with PAYMENT key. Headers X-Project-Uuid, X-Timestamp, X-Signature. Verify the RAW body. Answer 2xx within 15 s (queue heavy work); up to 9 attempts over ~2 days; dedupe by $event->id; events may arrive out of order.
+$v = new WebhookVerifier($projectId, new Secret($key) | [new Secret($new), new Secret($old)], tolerance=300);
+$event = $v->constructEvent(file_get_contents('php://input'), WebhookVerifier::headersFromGlobals());   // throws WebhookVerificationException -> answer 400 (->reason: WebhookFailureReason)
+WebhookEvent{id,type,createdAt}; objectType(); statusName(); data(). Subclasses: PaymentEvent->payment()/status(); PayoutEvent->payout()/status(); RefundEvent->refund()/status(); TestEvent; UnknownEvent (acknowledge).
+Deduplication: WebhookDeduplicatorInterface{claim(eventId): bool (atomic, false = already claimed); release(eventId): void}.
+  if (!claim($event->id)) return 200; try { handle or queue } catch (Throwable $e) { release($event->id); throw $e; /* non-2xx */ }
+  Enigmoss\Webhook\PdoWebhookDeduplicator(PDO $pdo, string $table='enigmoss_webhook_events'): atomic on PostgreSQL, MySQL/MariaDB, SQLite. Table: (event_id VARCHAR(64) PRIMARY KEY, claimed_at TIMESTAMP NOT NULL).
+  Laravel bridge: atomic cache add; failed to queue -> release + 500; failed job -> failed() releases. Symfony bridge (PSR-6): NOT atomic - bind PdoWebhookDeduplicator when the handler is not idempotent.
+
+## Errors (all implement EnigmossException::outcomeUnknown())
+ApiException{httpStatus,errorType,errorCode,retryable,details,violations,requestId,retryAfter,idempotencyKey,serverMessage,detail(key)}; getMessage() = "<server message> [<code>, request <id>] <hint>"
+ ValidationException(violationsFor(field)) | BusinessRuleException | AuthenticationException(serverTime()) | PermissionDeniedException > IpNotAllowedException (only auth.ip_forbidden) | NotFoundException | ConflictException(existingResourceId(), isOrderIdTaken()) > IdempotencyException | RateLimitException | DependencyException(502-504) | ServerException(500)
+TransportException{sendPhase,timedOut,idempotencyKey()} > ConnectionException; UnexpectedResponseException; WebhookVerificationException; InvalidArgumentException; ConfigurationException.
+Payout/refund creation is slow (up to ~160 s): those calls wait >= 180 s per attempt. Money-create retries: not-sent, 429, lock.not_acquired, idempotency.in_progress, dependency.unavailable — always with the same Idempotency-Key.
+Catch subclasses before parents. Branch on class or ErrorCode::* constants, never on message text; keep a default branch.
+outcomeUnknown true: transport sent/unknown, HTTP 5xx, idempotency.in_progress, unreadable 2xx. false: other 4xx, NotSent, local validation/config.
+IdempotencyException extends ConflictException: NEVER treat a conflict as "order_id taken" without isOrderIdTaken() (true only for resource.conflict with details.id and no status/reason).
+Three outcomes of a create (payout/refund/transfer; same logic for invoices, wallets):
+  1 created; 2 definitely not created (outcomeUnknown false, not order-taken): fix the cause, retry with the SAME order_id;
+  3 pending reconcile (outcomeUnknown true): keep your record "pending", do NOT create again in the same request, never a new order_id.
+    Reconcile later by cron or the payout.*/refund.* webhook with findByOrderId(). No object after a few minutes -> repeating create with the SAME order_id is safe.
+Catch order (outcomeUnknown FIRST, then isOrderIdTaken):
+  catch (EnigmossException $e) { if ($e->outcomeUnknown()) { markPending(); return; }
+    if ($e instanceof ConflictException && $e->isOrderIdTaken()) { $obj = get($e->existingResourceId()); } else { throw $e; } }
+Payout creation is slow (up to ~160 s), SDK waits >= 180 s per attempt: queue jobs need $timeout >= 600 and queue retry_after larger (Laravel: ShouldBeUnique by order_id, $tries).
+Create error codes: see ErrorCode (validation.failed 422; payout.insufficient_funds 422; payout.payouts_forbidden 403 PermissionDeniedException; resource.conflict 409; idempotency.* 409; rate_limit.exceeded 429; dependency.* 502-504 and internal.* 500 = outcome unknown).
+
+## Statuses (isFinal comes from the server; "typically" = derived)
+Payment: Pending/Processing/Confirming/UnderpaidWaiting/Locked/Refunding never final; Paid/Overpaid/Underpaid may be non-final; Expired/Cancelled/Failed/Refunded typically final. Fulfil only on isSuccessful().
+Payout: Pending/Processing/AwaitingApproval never final; Completed/Failed/Cancelled typically final. Failed/Cancelled: not paid out, order_id used up.
+Refund: Pending/Processing never final; Completed/Failed typically final.
+Unknown (any enum): read isFinal, log, do not act.
+
+## Transports
+CurlTransport(?caBundle, ?proxy) default. Bridge\Psr18\Psr18Transport(ClientInterface, RequestFactoryInterface, StreamFactoryInterface). Bridge\Symfony\Http\SymfonyHttpClientTransport(HttpClientInterface). Custom: TransportInterface::send(HttpRequest): HttpResponse; send URL/headers/body exactly, no redirects, return any status, throw TransportException with honest SendPhase (NotSent only if certain; else Unknown).
+Observers: ObserverInterface::onEvent(ClientEvent); Bridge\Psr3\LoggerObserver($psr3Logger).
+
+## Testing
+Testing\MockTransport: queue(), queueData(data,status,meta,headers), queueError(status,type,code,message,retryable,details,violations,retryAfter,headers), requests(), lastRequest(), lastJson(): array, sent(method, path): list<HttpRequest>, pending(). Testing\Fixtures (wire format, snake_case overrides merged recursively; ids must be UUIDs): payment/paidPayment/wallet/refund/payout/payoutQuote/transfer/transaction/balance/project/eventRecord(array $overrides=[]); webhook(string $event, ?array $data, string $eventId='019b7710-0000-7000-8000-000000000001', string $createdAt=...). Testing\WebhookSimulator::sign(payload, projectId, Secret, ?timestamp): SignedWebhook{body,headers, serverVariables(): array of HTTP_* vars for $this->call(...) / Symfony client} (send exact body string).
+
+## Laravel (10-13)
+Auto-discovered. config/enigmoss.php, env ENIGMOSS_BASE_URL, _PROJECT_ID, _PAYMENT_KEY, _PAYOUT_KEY, _CONNECTION, _TIMEOUT, _CONNECT_TIMEOUT, _MAX_RETRIES, _MAX_RETRY_DELAY, _ALLOW_INSECURE_HTTP, _LOG_CHANNEL, _WEBHOOK_TOLERANCE, _WEBHOOK_QUEUE_CONNECTION, _WEBHOOK_QUEUE, _WEBHOOK_DEDUPE_TTL.
+Facade Enigmoss::payments()->create(...) (services are METHODS), Enigmoss::connection('name'), Enigmoss::fake(): MockTransport (works without any ENIGMOSS_* config; placeholders filled). Inject EnigmossClient / WebhookVerifier / WebhookDeduplicatorInterface.
+Route::enigmossWebhooks(uri='webhooks/enigmoss', ?connection) -> verify + queue job -> event Bridge\Laravel\Events\WebhookReceived{event, connection}. POST route: exclude from CSRF (419) or use routes/api.php. Commands: enigmoss:check, enigmoss:webhook-test (--connection=).
+Listener: use event auto-discovery OR Event::listen, not both. Tests: trait Enigmoss\Bridge\Laravel\Testing\InteractsWithEnigmossWebhooks::postEnigmossWebhook(string $event, ?array $data, string $uri='/webhooks/enigmoss', ?string $connection=null, string $eventId=...).
+## Symfony (6.4, 7.4, 8.x)
+bundles.php: Enigmoss\Bridge\Symfony\EnigmossBundle::class => ['all'=>true]. enigmoss.yaml: default_client, logger, webhook_dedupe_ttl, webhook_dedupe_cache, clients.<name>.{base_url, project_id, payment_key, payout_key, timeout, connect_timeout, max_retries, max_retry_delay, webhook_tolerance, allow_insecure_http, transport: curl|symfony}.
+Autowire EnigmossClient (default) or EnigmossClient $shop2Client (client "shop2"); client "shop_us" = $shopUsClient or $shop_usClient, or #[Autowire(service: 'enigmoss.client.shop_us')]. Controller arg: #[MapEnigmossWebhook(client: ?string)] WebhookEvent $event (400 on invalid). WebhookDeduplicatorInterface (PSR-6 cache, not atomic). Commands enigmoss:check, enigmoss:webhook-test (--client=<name>).
+
+## Public classes (FQCN by namespace)
+Enigmoss\: EnigmossClient, ClientConfig, RequestOptions, Secret, AppInfo, Version
+Enigmoss\Auth: KeyScope, RequestSigner
+Enigmoss\Payment: PaymentService, Payment, PaymentStatus, PaymentFailureCode, PaymentPayer, PaymentPaid, PaymentSettlement, PaymentConversion, PaymentDiscount, CreatePaymentRequest, ListPaymentsQuery, AmlVerificationLink, AmlVerificationLinkStatus, Theme
+Enigmoss\Wallet: WalletService, Wallet, WalletStatus, CreateWalletRequest, ListWalletsQuery
+Enigmoss\Payout: PayoutService, Payout, PayoutStatus, PayoutPriority, RateSource, PayoutQuote, PayoutAmount, PayoutCharge, PayoutConversion, CreatePayoutRequest, QuotePayoutRequest, ListPayoutsQuery
+Enigmoss\Refund: RefundService, Refund, RefundStatus, RefundSource, RefundFailureCode, CreatePaymentRefundRequest, CreateWalletRefundRequest, ListRefundsQuery
+Enigmoss\Transfer: TransferService, Transfer, CreateTransferRequest, ListTransfersQuery
+Enigmoss\Balance: BalanceService, Balance. Enigmoss\Transaction: TransactionService, Transaction, TransactionType, ListTransactionsQuery
+Enigmoss\PaymentMethod: PaymentMethodService, PaymentMethod. Enigmoss\PayoutMethod: PayoutMethodService, PayoutMethod, PayoutMethodDetails, PriorityFee. Enigmoss\ExchangeRate: ExchangeRateService, ExchangeRate
+Enigmoss\Project: ProjectService, Project, KeyType. Enigmoss\Common: CursorPage, PaymentMethodRef
+Enigmoss\Event: EventService, EventRecord, ListEventsQuery, BulkRedeliverRequest, BulkRedeliveryResult, DeliveryAttempt, DeliveryStatus, AttemptTrigger, WebhookEvent, PaymentEvent, PayoutEvent, RefundEvent, TestEvent, UnknownEvent, WebhookObjectType
+Enigmoss\Webhook: WebhookService, WebhookVerifier, WebhookDeduplicatorInterface, PdoWebhookDeduplicator
+Enigmoss\Exception: EnigmossException, ApiException, ValidationException, BusinessRuleException, AuthenticationException, PermissionDeniedException, IpNotAllowedException, NotFoundException, ConflictException, IdempotencyException, RateLimitException, DependencyException, ServerException, TransportException, ConnectionException, UnexpectedResponseException, WebhookVerificationException, InvalidArgumentException, ConfigurationException, ErrorCode, ErrorType, SendPhase, Violation, WebhookFailureReason
+Enigmoss\Http: TransportInterface, CurlTransport, HttpRequest, HttpResponse, RawResponse, ResponseInfo, ObserverInterface, ClientEvent, ClientEventType. Enigmoss\Retry: ClockInterface, SleeperInterface, RetryClass, SystemClock, SystemSleeper
+Enigmoss\Testing: MockTransport, Fixtures, WebhookSimulator, SignedWebhook
+Enigmoss\Bridge\Laravel: EnigmossManager, EnigmossServiceProvider, CacheWebhookDeduplicator, Facades\Enigmoss, Events\WebhookReceived, Jobs\HandleEnigmossWebhook, Http\VerifyEnigmossWebhook, Http\WebhookController, Testing\InteractsWithEnigmossWebhooks, Console\CheckCommand, Console\WebhookTestCommand
+Enigmoss\Bridge\Symfony: EnigmossBundle, EnigmossClientFactory, Http\SymfonyHttpClientTransport, Webhook\CacheWebhookDeduplicator, Webhook\MapEnigmossWebhook, Webhook\WebhookValueResolver, Console\CheckCommand, Console\WebhookTestCommand
+Enigmoss\Bridge\Psr18: Psr18Transport. Enigmoss\Bridge\Psr3: LoggerObserver. Enigmoss\Internal is NOT API.

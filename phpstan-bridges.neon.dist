@@ -1,0 +1,11 @@
+# Bridges are analysed only in CI cells where the framework is installed.
+includes:
+    - vendor/phpstan/phpstan-strict-rules/rules.neon
+
+parameters:
+    level: max
+    phpVersion: 80100
+    paths:
+        - src/Bridge
+        - tests/Bridge
+        - tests/Support/Symfony

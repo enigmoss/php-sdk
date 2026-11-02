@@ -1,0 +1,24 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+// Fails when the release tag ("v1.2.3" or "1.2.3") differs from Enigmoss\Version::SDK, which is
+// the version sent in the User-Agent header.
+
+require __DIR__ . '/../vendor/autoload.php';
+
+$tag = ltrim($argv[1] ?? '', 'v');
+if ($tag === '') {
+    fwrite(STDERR, "Usage: bin/check-version <tag>\n");
+    exit(2);
+}
+if ($tag !== Enigmoss\Version::SDK) {
+    fwrite(STDERR, sprintf("Tag %s does not match Enigmoss\\Version::SDK = %s.\n", $tag, Enigmoss\Version::SDK));
+    exit(1);
+}
+if (preg_match('/^(0|[1-9]\d{0,4})\.(0|[1-9]\d{0,4})\.(0|[1-9]\d{0,4})(-[0-9A-Za-z.-]{1,16})?$/', $tag) !== 1) {
+    fwrite(STDERR, "The version must be semver (the API counts SDK usage only for semver versions).\n");
+    exit(1);
+}
+echo "Version {$tag} OK\n";
