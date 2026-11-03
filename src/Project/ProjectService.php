@@ -30,4 +30,19 @@ final class ProjectService
 
         return Project::fromPayload($result->payload());
     }
+
+    /**
+     * Returns the brand to show your payers: name, logo and the payment form origin.
+     *
+     * Works with either key and changes nothing. Cache the result for PlatformBrand::$refreshAfter
+     * seconds. GET /api/v4/project/platform-brand.
+     *
+     * @throws \Enigmoss\Exception\EnigmossException
+     */
+    public function platformBrand(?RequestOptions $options = null): PlatformBrand
+    {
+        $result = $this->requester->execute(Endpoint::get('/project/platform-brand', KeyScope::Any), options: $options);
+
+        return PlatformBrand::fromPayload($result->payload());
+    }
 }

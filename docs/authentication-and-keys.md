@@ -96,13 +96,13 @@ All paths are relative to `/api/v4`.
 
 ## Escape hatch
 
-Endpoints the SDK does not model yet, including hidden or feature-gated ones, are reachable through `EnigmossClient::request()` with the same signing, idempotency, retries and typed exceptions. Choose the key with `KeyScope`:
+Endpoints the SDK does not model yet are reachable through `EnigmossClient::request()` with the same signing, idempotency, retries and typed exceptions. Choose the key with `KeyScope`:
 
 ```php
 use Enigmoss\Auth\KeyScope;
 
-$raw = $enigmoss->request('POST', '/payouts/' . rawurlencode($id) . '/cancel', [], KeyScope::Payout, idempotent: true);
+$raw = $enigmoss->request('POST', '/payments/' . rawurlencode($id) . '/cancel', [], KeyScope::Payment, idempotent: true);
 $data = $raw->data;   // decoded "data" member
 ```
 
-`KeyScope` has three cases: `Payment`, `Payout`, `Any`. The path is relative to `/api/v4`, must start with `/` and must not contain a query string (pass it as `$query`) or `{`. Such endpoints may be unavailable for your project: the call then fails with a typed exception like any other.
+`KeyScope` has three cases: `Payment`, `Payout`, `Any`. The path is relative to `/api/v4`, must start with `/` and must not contain a query string (pass it as `$query`) or `{`. An endpoint your project cannot use fails with a typed exception like any other call.

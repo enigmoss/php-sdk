@@ -31,6 +31,31 @@ final class Fixtures
     }
 
     /**
+     * Response of project->platformBrand(). Pass ['brand' => null] for a project without a brand.
+     *
+     * @param array<string, mixed> $overrides
+     *
+     * @return array<string, mixed>
+     */
+    public static function platformBrand(array $overrides = []): array
+    {
+        return self::merge([
+            'brand' => [
+                'name' => 'Example Pay',
+                'logo' => [
+                    'url' => 'https://static.example.com/brand/logo.png',
+                    'sha256' => 'b5bb9d8014a0f9b1d61e21e796d78dccdf1352f23cd32812f4850b878ae4944c',
+                    'mime' => 'image/png',
+                    'width' => 240,
+                    'height' => 64,
+                ],
+            ],
+            'payform' => ['origin' => 'https://pay.example.com'],
+            'refresh_after' => 86400,
+        ], $overrides);
+    }
+
+    /**
      * @param array<string, mixed> $overrides
      *
      * @return array<string, mixed>

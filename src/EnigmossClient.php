@@ -158,7 +158,7 @@ final class EnigmossClient
      * Calls any v4 endpoint, including ones this SDK version does not model yet, with the same
      * signing, idempotency, retries and typed exceptions as the typed services.
      *
-     *     $raw = $enigmoss->request('POST', '/payouts/' . $id . '/cancel', [], KeyScope::Payout, idempotent: true);
+     *     $raw = $enigmoss->request('POST', '/payments/' . rawurlencode($id) . '/cancel', [], KeyScope::Payment, idempotent: true);
      *
      * @param string                              $path       Path after "/api/v4", starting with "/". Encode dynamic segments with rawurlencode().
      * @param array<string, mixed>|null           $body       JSON body for POST/PATCH; null sends "{}".

@@ -4,7 +4,7 @@ Namespace Enigmoss\. PHP >= 8.1, no runtime deps (ext-json; ext-curl for default
 ## Rules that must not be broken
 - Money is ALWAYS a decimal string ("10.50"), never float. Dates are UTC (DateTimeImmutable).
 - Base URL is white-label: "your API host from the dashboard"; placeholder https://api.example.com. SDK appends /api/v4.
-- Two keys. PAYMENT key: payments, wallets, AML links, balances, transactions, payment-method discount PATCH, events journal, test webhooks, verifying incoming webhooks. PAYOUT key: payouts, quotes, refunds, transfers (IP whitelist applies; a disallowed IP -> IpNotAllowedException, code auth.ip_forbidden only). EITHER: project->get, paymentMethods->list, exchangeRates->list, payoutMethods->list/get.
+- Two keys. PAYMENT key: payments, wallets, AML links, balances, transactions, payment-method discount PATCH, events journal, test webhooks, verifying incoming webhooks. PAYOUT key: payouts, quotes, refunds, transfers (IP whitelist applies; a disallowed IP -> IpNotAllowedException, code auth.ip_forbidden only). EITHER: project->get, project->platformBrand, paymentMethods->list, exchangeRates->list, payoutMethods->list/get.
 - Wrap keys in Secret. Requests are HMAC-SHA256 signed automatically (300 s clock window; SDK corrects drift once).
 - Create calls derive Idempotency-Key from order_id: repeat = stored response (24 h; later ConflictException with isOrderIdTaken()). One order_id = one object FOREVER (a failed payout keeps its order_id).
 - ONLY 2xx responses are stored under the key. A rejected (4xx) create made nothing: it may be repeated with the SAME order_id after the cause is fixed (e.g. top up after payout.insufficient_funds).
@@ -31,6 +31,7 @@ Every service method takes optional last arg ?RequestOptions(idempotencyKey, tim
 
 ## Services ($e->...)
 project->get(): Project{id,name,keyType,permissions,serverTime}
+project->platformBrand(): PlatformBrand{?brand: Brand{name, ?logo: BrandLogo{url,sha256,mime,width,height}}, payformOrigin, refreshAfter (seconds to cache)}   // either key
 payments (payment key):
   create(CreatePaymentRequest): Payment            // perm payment_create_invoice; paymentUrl is ?string (check before redirect)
   get(id) / findByOrderId(orderId): ?Payment / list(?ListPaymentsQuery): CursorPage / iterate(?ListPaymentsQuery): Generator   // info_payments
@@ -102,7 +103,7 @@ CurlTransport(?caBundle, ?proxy) default. Bridge\Psr18\Psr18Transport(ClientInte
 Observers: ObserverInterface::onEvent(ClientEvent); Bridge\Psr3\LoggerObserver($psr3Logger).
 
 ## Testing
-Testing\MockTransport: queue(), queueData(data,status,meta,headers), queueError(status,type,code,message,retryable,details,violations,retryAfter,headers), requests(), lastRequest(), lastJson(): array, sent(method, path): list<HttpRequest>, pending(). Testing\Fixtures (wire format, snake_case overrides merged recursively; ids must be UUIDs): payment/paidPayment/wallet/refund/payout/payoutQuote/transfer/transaction/balance/project/eventRecord(array $overrides=[]); webhook(string $event, ?array $data, string $eventId='019b7710-0000-7000-8000-000000000001', string $createdAt=...). Testing\WebhookSimulator::sign(payload, projectId, Secret, ?timestamp): SignedWebhook{body,headers, serverVariables(): array of HTTP_* vars for $this->call(...) / Symfony client} (send exact body string).
+Testing\MockTransport: queue(), queueData(data,status,meta,headers), queueError(status,type,code,message,retryable,details,violations,retryAfter,headers), requests(), lastRequest(), lastJson(): array, sent(method, path): list<HttpRequest>, pending(). Testing\Fixtures (wire format, snake_case overrides merged recursively; ids must be UUIDs): payment/paidPayment/wallet/refund/payout/payoutQuote/transfer/transaction/balance/project/platformBrand/eventRecord(array $overrides=[]); webhook(string $event, ?array $data, string $eventId='019b7710-0000-7000-8000-000000000001', string $createdAt=...). Testing\WebhookSimulator::sign(payload, projectId, Secret, ?timestamp): SignedWebhook{body,headers, serverVariables(): array of HTTP_* vars for $this->call(...) / Symfony client} (send exact body string).
 
 ## Laravel (10-13)
 Auto-discovered. config/enigmoss.php, env ENIGMOSS_BASE_URL, _PROJECT_ID, _PAYMENT_KEY, _PAYOUT_KEY, _CONNECTION, _TIMEOUT, _CONNECT_TIMEOUT, _MAX_RETRIES, _MAX_RETRY_DELAY, _ALLOW_INSECURE_HTTP, _LOG_CHANNEL, _WEBHOOK_TOLERANCE, _WEBHOOK_QUEUE_CONNECTION, _WEBHOOK_QUEUE, _WEBHOOK_DEDUPE_TTL.

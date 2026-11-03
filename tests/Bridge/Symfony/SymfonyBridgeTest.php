@@ -50,6 +50,8 @@ final class SymfonyBridgeTest extends TestCase
         self::assertFalse($deduplicator->claim('019b7710-0000-7000-8000-00000000dd01'));
         $deduplicator->release('019b7710-0000-7000-8000-00000000dd01');
         self::assertTrue($deduplicator->claim('019b7710-0000-7000-8000-00000000dd01'));
+        // The cache outlives the test process (kernel cache dir): leave the key free for the next run.
+        $deduplicator->release('019b7710-0000-7000-8000-00000000dd01');
     }
 
     public function testControllerReceivesVerifiedEvent(): void

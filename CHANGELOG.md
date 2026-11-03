@@ -25,6 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Symfony bridge (Symfony 6.4, 7.4 and 8.x): `EnigmossBundle`, named client autowiring, `#[MapEnigmossWebhook]`, a cache-backed deduplicator, console commands and an opt-in `symfony` transport.
 - Documentation in `docs/`, runnable scripts in `examples/` and `docs/llms.txt` for AI coding assistants.
 - `ConflictException::isOrderIdTaken()`: true when a create failed because the `order_id` already belongs to an object; false for `IdempotencyException`, busy locks and state conflicts.
+- `project->platformBrand()`: the brand to show payers (name, logo with its SHA-256, payment form origin) and how long to cache it.
 - `Payment::isSuccessful()` (`status->isPaid() && isFinal`): the canonical fulfilment rule.
 - Exception messages now read `"<server message> [<code>, request <id>] <hint>"`; the raw server text is `ApiException::$serverMessage`. Webhook verification messages name the missing header or point to the raw body and the payment key.
 - Atomic webhook deduplication: `WebhookDeduplicatorInterface` is now `claim(string): bool` and `release(string): void` (replacing the earlier non-atomic check-then-mark contract), and `PdoWebhookDeduplicator` works on PostgreSQL, MySQL/MariaDB and SQLite. The Laravel bridge claims with an atomic cache `add`, releases the claim when queueing fails (the endpoint answers 500) and when the queued job fails for good. The Symfony bridge deduplicator (PSR-6) is not atomic; bind `PdoWebhookDeduplicator` when the handler is not idempotent.

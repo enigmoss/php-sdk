@@ -238,6 +238,45 @@ final class ResourcesTest extends TestCase
         self::assertSame('10.50', $record->payload->payment()->paid->amount);
     }
 
+    public function testPlatformBrandSendsTheWireFormatAndReadsTheBrand(): void
+    {
+        $transport = (new MockTransport())->queueData(Fixtures::platformBrand());
+
+        $result = ClientFactory::make($transport)->project->platformBrand();
+
+        $request = $this->request($transport);
+        self::assertSame('GET', $request->method);
+        self::assertSame('https://api.example.com/api/v4/project/platform-brand', $request->url);
+        self::assertSame($this->signature(ClientFactory::PAYMENT_SECRET, 'GET', '/api/v4/project/platform-brand', ''), $request->headers['X-Signature']);
+
+        self::assertNotNull($result->brand);
+        self::assertSame('Example Pay', $result->brand->name);
+        self::assertNotNull($result->brand->logo);
+        self::assertSame('https://static.example.com/brand/logo.png', $result->brand->logo->url);
+        self::assertSame('b5bb9d8014a0f9b1d61e21e796d78dccdf1352f23cd32812f4850b878ae4944c', $result->brand->logo->sha256);
+        self::assertSame('image/png', $result->brand->logo->mime);
+        self::assertSame([240, 64], [$result->brand->logo->width, $result->brand->logo->height]);
+        self::assertSame('https://pay.example.com', $result->payformOrigin);
+        self::assertSame(86400, $result->refreshAfter);
+    }
+
+    public function testPlatformBrandWithoutBrandOrLogo(): void
+    {
+        $transport = (new MockTransport())
+            ->queueData(Fixtures::platformBrand(['brand' => null]))
+            ->queueData(Fixtures::platformBrand(['brand' => ['logo' => null]]));
+        $client = ClientFactory::make($transport, withPayout: false);
+
+        $withoutBrand = $client->project->platformBrand();
+        $withoutLogo = $client->project->platformBrand();
+
+        self::assertNull($withoutBrand->brand);
+        $noLogo = $withoutLogo->brand;
+        self::assertNotNull($noLogo);
+        self::assertSame('Example Pay', $noLogo->name);
+        self::assertNull($noLogo->logo);
+    }
+
     private function request(MockTransport $transport): HttpRequest
     {
         $request = $transport->lastRequest();

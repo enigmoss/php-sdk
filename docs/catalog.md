@@ -75,3 +75,17 @@ if (!in_array('payout_create', $project->permissions, true)) {
     // payouts are not available with this key
 }
 ```
+
+## Show the brand to payers
+
+`project->platformBrand()` returns the brand to show next to the pay button: `brand` (`name` and an optional `logo` with `url`, `sha256`, `mime`, `width`, `height`; `null` when there is nothing to show), `payformOrigin` and `refreshAfter` — how many seconds the result may be cached. Works with either key and changes nothing.
+
+```php
+$brand = $enigmoss->project->platformBrand();
+
+if ($brand->brand !== null) {
+    echo $brand->brand->name;
+    // Download $brand->brand->logo?->url once, check its sha256 and keep a local copy.
+}
+// Cache $brand for $brand->refreshAfter seconds.
+```
