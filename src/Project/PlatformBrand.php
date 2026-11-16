@@ -24,6 +24,12 @@ final class PlatformBrand
         public readonly string $payformOrigin,
         /** How long the result may be cached, in seconds. */
         public readonly int $refreshAfter,
+        /**
+         * Origin of the API host this project should call, e.g. "https://api.example.com".
+         * Null when the server does not report it. The SDK follows it by itself when a fallback
+         * base URL is configured (ClientConfig::$fallbackBaseUrl); do not build API URLs from it.
+         */
+        public readonly ?string $apiOrigin = null,
     ) {}
 
     /**
@@ -32,11 +38,13 @@ final class PlatformBrand
     public static function fromPayload(Payload $p): self
     {
         $brand = $p->nullableObject('brand');
+        $api = $p->nullableObject('api');
 
         return new self(
             brand: $brand === null ? null : Brand::fromPayload($brand),
             payformOrigin: $p->object('payform')->string('origin'),
             refreshAfter: $p->int('refresh_after'),
+            apiOrigin: $api?->nullableString('origin'),
         );
     }
 

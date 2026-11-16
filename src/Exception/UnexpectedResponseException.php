@@ -20,9 +20,24 @@ final class UnexpectedResponseException extends \RuntimeException implements Eni
         parent::__construct($message, 0, $previous);
     }
 
+    private ?bool $outcomeOverride = null;
+
     public function outcomeUnknown(): bool
     {
-        return $this->httpStatus !== null && $this->httpStatus >= 200 && $this->httpStatus < 300;
+        return $this->outcomeOverride ?? ($this->httpStatus !== null && $this->httpStatus >= 200 && $this->httpStatus < 300);
+    }
+
+    /**
+     * Pins the outcome of the call this error ends. An unreadable answer of the fallback host
+     * says nothing about the original request, which was not sent.
+     *
+     * @internal
+     */
+    public function withOutcomeUnknown(bool $unknown): self
+    {
+        $this->outcomeOverride = $unknown;
+
+        return $this;
     }
 
     /**

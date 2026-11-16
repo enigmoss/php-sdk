@@ -28,6 +28,8 @@ final class LoggerObserver implements ObserverInterface
             'duration_ms' => $event->durationSeconds === null ? null : (int) round($event->durationSeconds * 1000),
             'retry_in_s' => $event->retryDelaySeconds,
             'error' => $event->error === null ? null : $event->error::class . ': ' . $event->error->getMessage(),
+            'origin' => $event->origin,
+            'previous_origin' => $event->previousOrigin,
         ], static fn(mixed $value): bool => $value !== null);
 
         match ($event->type) {
@@ -35,6 +37,7 @@ final class LoggerObserver implements ObserverInterface
             ClientEventType::ResponseReceived => $this->logger->debug('Enigmoss API response', $context),
             ClientEventType::RetryScheduled => $this->logger->notice('Enigmoss API call retried', $context),
             ClientEventType::RequestFailed => $this->logger->warning('Enigmoss API call failed', $context),
+            ClientEventType::OriginChanged => $this->logger->warning('Enigmoss API origin changed', $context),
         };
     }
 }

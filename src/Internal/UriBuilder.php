@@ -21,6 +21,19 @@ final class UriBuilder
      */
     public static function build(string $origin, string $path, array $query): array
     {
+        $requestUri = self::requestUri($path, $query);
+
+        return ['url' => $origin . $requestUri, 'requestUri' => $requestUri];
+    }
+
+    /**
+     * The signed part of the URL. It does not depend on the origin, so it stays the same when a
+     * call moves to another API origin.
+     *
+     * @param array<string, string|int|bool|null> $query Null values are dropped; order is kept.
+     */
+    public static function requestUri(string $path, array $query): string
+    {
         $pairs = [];
         foreach ($query as $name => $value) {
             if ($value === null) {
@@ -31,8 +44,6 @@ final class UriBuilder
         }
 
         // Never emit a bare "?": some server runtimes drop it and the signature would differ.
-        $requestUri = $pairs === [] ? $path : $path . '?' . implode('&', $pairs);
-
-        return ['url' => $origin . $requestUri, 'requestUri' => $requestUri];
+        return $pairs === [] ? $path : $path . '?' . implode('&', $pairs);
     }
 }

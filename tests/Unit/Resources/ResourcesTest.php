@@ -257,6 +257,7 @@ final class ResourcesTest extends TestCase
         self::assertSame('image/png', $result->brand->logo->mime);
         self::assertSame([240, 64], [$result->brand->logo->width, $result->brand->logo->height]);
         self::assertSame('https://pay.example.com', $result->payformOrigin);
+        self::assertSame('https://api.example.com', $result->apiOrigin);
         self::assertSame(86400, $result->refreshAfter);
     }
 
@@ -271,6 +272,10 @@ final class ResourcesTest extends TestCase
         $withoutLogo = $client->project->platformBrand();
 
         self::assertNull($withoutBrand->brand);
+        // A server that does not report the API origin yet.
+        $legacy = Fixtures::platformBrand();
+        unset($legacy['api']);
+        self::assertNull(\Enigmoss\Project\PlatformBrand::fromArray($legacy)->apiOrigin);
         $noLogo = $withoutLogo->brand;
         self::assertNotNull($noLogo);
         self::assertSame('Example Pay', $noLogo->name);

@@ -41,9 +41,24 @@ class ApiException extends \RuntimeException implements EnigmossException
      */
     public readonly string $serverMessage;
 
+    private ?bool $outcomeOverride = null;
+
     public function outcomeUnknown(): bool
     {
-        return $this->httpStatus >= 500 || $this->errorCode === ErrorCode::IDEMPOTENCY_IN_PROGRESS;
+        return $this->outcomeOverride ?? ($this->httpStatus >= 500 || $this->errorCode === ErrorCode::IDEMPOTENCY_IN_PROGRESS);
+    }
+
+    /**
+     * Pins the outcome of the call this error ends. An error answered by the fallback host says
+     * nothing about the original request, which was not sent.
+     *
+     * @internal
+     */
+    public function withOutcomeUnknown(bool $unknown): static
+    {
+        $this->outcomeOverride = $unknown;
+
+        return $this;
     }
 
     /**

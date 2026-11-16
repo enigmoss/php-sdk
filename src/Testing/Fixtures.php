@@ -50,6 +50,7 @@ final class Fixtures
                     'height' => 64,
                 ],
             ],
+            'api' => ['origin' => 'https://api.example.com'],
             'payform' => ['origin' => 'https://pay.example.com'],
             'refresh_after' => 86400,
         ], $overrides);

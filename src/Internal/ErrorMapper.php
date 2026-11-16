@@ -30,7 +30,10 @@ use Enigmoss\Http\HttpResponse;
  */
 final class ErrorMapper
 {
-    public static function map(HttpResponse $response, ?string $idempotencyKey, ?\Throwable $previous = null): MappedError
+    /**
+     * @param string $prefix Put before the message, e.g. to say that another host answered.
+     */
+    public static function map(HttpResponse $response, ?string $idempotencyKey, ?\Throwable $previous = null, string $prefix = ''): MappedError
     {
         $requestId = $response->header('X-Request-Id');
         $retryAfter = self::retryAfterHeader($response);
@@ -44,7 +47,7 @@ final class ErrorMapper
 
         $error = \is_array($decoded) ? ($decoded['error'] ?? null) : null;
         if (!\is_array($error) || !\is_string($error['code'] ?? null)) {
-            return new MappedError(self::withoutEnvelope($response, $requestId, $retryAfter, $idempotencyKey, $previous), false, $retryAfter);
+            return new MappedError(self::withoutEnvelope($response, $requestId, $retryAfter, $idempotencyKey, $previous, $prefix), false, $retryAfter);
         }
 
         $meta = \is_array($decoded['meta'] ?? null) ? $decoded['meta'] : [];
@@ -61,7 +64,7 @@ final class ErrorMapper
 
         $class = self::classFor($type, $code, $response->statusCode);
         $exception = new $class(
-            message: self::describe($message, $code, $requestId, self::hint($code, $details, $retryAfter)),
+            message: $prefix . self::describe($message, $code, $requestId, self::hint($code, $details, $retryAfter)),
             httpStatus: $response->statusCode,
             errorType: $type,
             errorCode: $code,
@@ -154,13 +157,15 @@ final class ErrorMapper
         ?int $retryAfter,
         ?string $idempotencyKey,
         ?\Throwable $previous,
+        string $prefix,
     ): ApiException|UnexpectedResponseException {
         $status = $response->statusCode;
         if ($status < 500 && $status !== 429) {
-            $hint = $status === 404 ? ' Check ClientConfig::$baseUrl: the host does not serve this API.' : '';
+            $option = $prefix === '' ? 'baseUrl' : 'fallbackBaseUrl';
+            $hint = $status === 404 ? \sprintf(' Check ClientConfig::$%s: the host does not serve this API.', $option) : '';
 
             return new UnexpectedResponseException(
-                \sprintf('Unexpected HTTP %d response without an API error body.%s', $status, $hint),
+                $prefix . \sprintf('Unexpected HTTP %d response without an API error body.%s', $status, $hint),
                 $status,
                 $requestId,
                 $idempotencyKey,
@@ -176,7 +181,7 @@ final class ErrorMapper
         };
 
         return new $class(
-            message: \sprintf('HTTP %d from the API host or a proxy in front of it.', $status),
+            message: $prefix . \sprintf('HTTP %d from the API host or a proxy in front of it.', $status),
             httpStatus: $status,
             errorType: $type,
             errorCode: 'http.' . $status,

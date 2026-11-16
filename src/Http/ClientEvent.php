@@ -23,5 +23,9 @@ final class ClientEvent
         /** Delay before the next attempt (RetryScheduled only). */
         public readonly ?float $retryDelaySeconds = null,
         public readonly ?\Throwable $error = null,
+        /** The API origin in use from now on (OriginChanged only). */
+        public readonly ?string $origin = null,
+        /** The API origin that could not be reached (OriginChanged only). */
+        public readonly ?string $previousOrigin = null,
     ) {}
 }

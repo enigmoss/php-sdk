@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Enigmoss;
 
 use Enigmoss\Exception\ConfigurationException;
+use Enigmoss\Http\OriginStoreInterface;
 
 /**
  * Immutable client configuration.
@@ -17,6 +18,11 @@ use Enigmoss\Exception\ConfigurationException;
  * At least one key is required. The payment key covers payments, static wallets, balances,
  * transactions and webhook events; the payout key covers payouts, refunds and transfers.
  * Pass only the keys you use.
+ *
+ * The fallback base URL is optional. When it is set and the API host cannot be reached at all
+ * (DNS, refused connection, TLS handshake, connect timeout) even after the retries, the SDK asks
+ * the fallback host for the current API origin of the project and repeats the call there; see
+ * docs/configuration.md#api-origin-fallback.
  */
 final class ClientConfig
 {
@@ -35,6 +41,13 @@ final class ClientConfig
     public readonly string $projectId;
 
     /**
+     * Origin of the fallback host, normalized like $origin; null when no fallback is configured.
+     *
+     * @var non-empty-string|null
+     */
+    public readonly ?string $fallbackOrigin;
+
+    /**
      * @param string      $baseUrl           API host, e.g. "https://api.example.com".
      * @param string      $projectId        Project UUID from the dashboard.
      * @param Secret|null $paymentKey        Payment API key.
@@ -46,6 +59,8 @@ final class ClientConfig
      * @param int         $webhookTolerance  Accepted age of a webhook X-Timestamp, in seconds.
      * @param bool        $allowInsecureHttp Allow "http://" base URLs (local development only).
      * @param AppInfo|null $appInfo          Your application name, appended to the User-Agent.
+     * @param string|null $fallbackBaseUrl   Host asked for the current API origin when $baseUrl cannot be reached; null or "" disables the fallback.
+     * @param OriginStoreInterface|null $originStore Shares the origin learned from the fallback host between processes (PHP-FPM); memory of this client when null.
      */
     public function __construct(
         string $baseUrl,
@@ -59,9 +74,14 @@ final class ClientConfig
         public readonly int $webhookTolerance = 300,
         public readonly bool $allowInsecureHttp = false,
         public readonly ?AppInfo $appInfo = null,
+        ?string $fallbackBaseUrl = null,
+        public readonly ?OriginStoreInterface $originStore = null,
     ) {
-        $this->origin = self::normalizeBaseUrl($baseUrl, $allowInsecureHttp);
+        $this->origin = self::normalizeBaseUrl($baseUrl, $allowInsecureHttp, 'baseUrl');
         $this->projectId = self::normalizeProjectId($projectId);
+        $this->fallbackOrigin = $fallbackBaseUrl === null || trim($fallbackBaseUrl) === ''
+            ? null
+            : self::normalizeBaseUrl($fallbackBaseUrl, $allowInsecureHttp, 'fallbackBaseUrl');
 
         if ($paymentKey === null && $payoutKey === null) {
             throw new ConfigurationException('Pass at least one API key: paymentKey and/or payoutKey.');
@@ -97,6 +117,33 @@ final class ClientConfig
             webhookTolerance: $this->webhookTolerance,
             allowInsecureHttp: $this->allowInsecureHttp,
             appInfo: $this->appInfo,
+            fallbackBaseUrl: $this->fallbackOrigin,
+            originStore: $this->originStore,
+        );
+    }
+
+    /**
+     * A copy that reports another API origin; EnigmossClient::config() uses it to show the origin
+     * in use after a fallback.
+     *
+     * @internal
+     */
+    public function withOrigin(string $origin): self
+    {
+        return new self(
+            baseUrl: $origin,
+            projectId: $this->projectId,
+            paymentKey: $this->paymentKey,
+            payoutKey: $this->payoutKey,
+            timeout: $this->timeout,
+            connectTimeout: $this->connectTimeout,
+            maxRetries: $this->maxRetries,
+            maxRetryDelay: $this->maxRetryDelay,
+            webhookTolerance: $this->webhookTolerance,
+            allowInsecureHttp: $this->allowInsecureHttp,
+            appInfo: $this->appInfo,
+            fallbackBaseUrl: $this->fallbackOrigin,
+            originStore: $this->originStore,
         );
     }
 
@@ -116,31 +163,34 @@ final class ClientConfig
             'maxRetryDelay' => $this->maxRetryDelay,
             'webhookTolerance' => $this->webhookTolerance,
             'allowInsecureHttp' => $this->allowInsecureHttp,
+            'fallbackOrigin' => $this->fallbackOrigin,
+            'originStore' => $this->originStore === null ? null : $this->originStore::class,
         ];
     }
 
     /**
      * @return non-empty-string
      */
-    private static function normalizeBaseUrl(string $baseUrl, bool $allowInsecureHttp): string
+    private static function normalizeBaseUrl(string $baseUrl, bool $allowInsecureHttp, string $name): string
     {
         $parts = parse_url(trim($baseUrl));
         if (!\is_array($parts) || !isset($parts['scheme'], $parts['host']) || $parts['host'] === '') {
-            throw new ConfigurationException('baseUrl must be an absolute URL such as "https://api.example.com".');
+            throw new ConfigurationException(\sprintf('%s must be an absolute URL such as "https://api.example.com".', $name));
         }
 
         $scheme = strtolower($parts['scheme']);
         if ($scheme !== 'https' && !($scheme === 'http' && $allowInsecureHttp)) {
-            throw new ConfigurationException('baseUrl must use https (set allowInsecureHttp only for local development).');
+            throw new ConfigurationException(\sprintf('%s must use https (set allowInsecureHttp only for local development).', $name));
         }
         if (isset($parts['user']) || isset($parts['pass']) || isset($parts['query']) || isset($parts['fragment'])) {
-            throw new ConfigurationException('baseUrl must not contain credentials, a query string or a fragment.');
+            throw new ConfigurationException(\sprintf('%s must not contain credentials, a query string or a fragment.', $name));
         }
 
         $path = rtrim($parts['path'] ?? '', '/');
         if ($path !== '' && $path !== self::API_PREFIX) {
             throw new ConfigurationException(\sprintf(
-                'baseUrl must point at the API host ("https://api.example.com"), optionally followed by "%s"; got path "%s".',
+                '%s must point at the API host ("https://api.example.com"), optionally followed by "%s"; got path "%s".',
+                $name,
                 self::API_PREFIX,
                 $path,
             ));

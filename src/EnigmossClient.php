@@ -43,8 +43,9 @@ use Enigmoss\Webhook\WebhookService;
  *     ));
  *     $project = $enigmoss->project->get();
  *
- * The client is stateless apart from a clock-drift correction, so one instance can be shared
- * by the whole application, including long-running workers.
+ * The client is stateless apart from a clock-drift correction and, when a fallback base URL is
+ * configured, the API origin learned from the fallback host. One instance can be shared by the
+ * whole application, including long-running workers.
  */
 final class EnigmossClient
 {
@@ -149,9 +150,17 @@ final class EnigmossClient
         );
     }
 
+    /**
+     * The configuration of this client. $origin is the API origin in use right now: the
+     * configured base URL, or the origin the fallback host named after the configured one could
+     * not be reached (see ClientConfig::$fallbackOrigin).
+     */
     public function config(): ClientConfig
     {
-        return $this->requester->config();
+        $config = $this->requester->config();
+        $origin = $this->requester->origin();
+
+        return $origin === $config->origin ? $config : $config->withOrigin($origin);
     }
 
     /**
