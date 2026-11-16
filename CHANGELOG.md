@@ -48,3 +48,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Examples and documentation check `outcomeUnknown()` before `isOrderIdTaken()`, so `idempotency.in_progress` is never reported as "order_id taken".
 - `IpNotAllowedException` is thrown only for `auth.ip_forbidden`.
 - `Psr18Transport` no longer reports a PSR-18 `RequestExceptionInterface` as "not sent" (`ConnectionException`): clients such as Guzzle throw it for failures in the middle of a transfer too. Every PSR-18 failure is now a `TransportException` with `SendPhase::Unknown`, so a money-moving request is repeated only when an `Idempotency-Key` protects it.
+
+### Fixed
+
+- `CurlTransport` with libcurl 8: a connect timeout - a TCP connect or a TLS handshake that never finishes, which is what a blocked API host looks like - was reported as "sent" (`TransportException`, `SendPhase::Sent`), because libcurl 8 sets the pre-transfer time of a failed connect to the moment of the failure instead of zero. It is a `ConnectionException` again, so a money-moving request is retried and the API origin fallback starts. A timeout now counts as "not sent" only when all signs agree: curl counted no request bytes, the connection was not established (no finished TLS handshake for https, no TCP connect for http), and either the transfer never got ready or curl itself reports a timeout of the resolve or connect phase. A request that was sent on a reused connection stays "sent", also with libcurl 8.7, which reports a request size of zero for it.

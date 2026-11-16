@@ -38,6 +38,13 @@ final class CurlTransport implements TransportInterface
 
     private const TIMEOUT_ERROR = 28;
 
+    /**
+     * How curl words a timeout that hit before the transfer started: while resolving, while
+     * connecting or in the TLS handshake. A timeout after that point reads "Operation timed out
+     * after ... bytes received" in every libcurl version.
+     */
+    private const CONNECT_PHASE_TIMEOUT = '/^(?:Resolving timed out|Connection timed out|Connection timeout|Connection time-out|Failed to connect to |SSL(?:\/TLS)? connection timeout)/i';
+
     private const RESOLVE_HOST_ERROR = 6;
 
     private const RESOLVE_PROXY_ERROR = 5;
@@ -121,20 +128,58 @@ final class CurlTransport implements TransportInterface
         if (!\is_string($body)) {
             $errno = curl_errno($handle);
             $error = curl_error($handle);
-            $preTransfer = curl_getinfo($handle, CURLINFO_PRETRANSFER_TIME);
-            $requestSize = curl_getinfo($handle, CURLINFO_REQUEST_SIZE);
+            $timedOutBeforeSending = $errno === self::TIMEOUT_ERROR && self::timedOutBeforeSending(
+                $error,
+                curl_getinfo($handle, CURLINFO_REQUEST_SIZE),
+                curl_getinfo($handle, CURLINFO_CONNECT_TIME),
+                curl_getinfo($handle, CURLINFO_APPCONNECT_TIME),
+                curl_getinfo($handle, CURLINFO_PRETRANSFER_TIME),
+                stripos($request->url, 'https://') === 0,
+            );
 
-            throw $this->failure($errno, $error, $preTransfer, $requestSize);
+            throw $this->failure($errno, $error, $timedOutBeforeSending);
         }
 
         return new HttpResponse(curl_getinfo($handle, CURLINFO_RESPONSE_CODE), $headers, $body);
     }
 
-    private function failure(int $errno, string $error, float $preTransferTime, int $requestSize): TransportException
+    /**
+     * Whether a curl timeout (error 28) proves that the request was not sent. All three must hold:
+     *
+     *  - curl counted no request bytes;
+     *  - the connection was not established: no finished TLS handshake for https, no finished
+     *    TCP connect for http;
+     *  - the timeout hit before the transfer started: the pre-transfer time is zero, or curl
+     *    itself reports a timeout of the resolve or connect phase.
+     *
+     * No single sign is enough across libcurl versions. Since libcurl 8 the pre-transfer time of
+     * a failed connect is the moment of the failure, not zero. libcurl 8.7 reports a request size
+     * of zero for a request it did send. And a request sent on a reused connection has connect
+     * times of zero, like a connection that was never made - there only the error text, "Operation
+     * timed out", tells that the transfer had started. When the signs disagree, the request counts
+     * as sent.
+     *
+     * @internal
+     */
+    public static function timedOutBeforeSending(
+        string $error,
+        int $requestSize,
+        float $connectTime,
+        float $appConnectTime,
+        float $preTransferTime,
+        bool $tls,
+    ): bool {
+        if ($requestSize !== 0 || ($tls ? $appConnectTime : $connectTime) > 0.0) {
+            return false;
+        }
+
+        return $preTransferTime <= 0.0 || preg_match(self::CONNECT_PHASE_TIMEOUT, $error) === 1;
+    }
+
+    private function failure(int $errno, string $error, bool $timedOutBeforeSending): TransportException
     {
         $message = \sprintf('HTTP request failed: curl error %d: %s', $errno, $error);
-        $notSent = \in_array($errno, self::NOT_SENT_ERRORS, true)
-            || ($errno === self::TIMEOUT_ERROR && $preTransferTime <= 0.0 && $requestSize === 0);
+        $notSent = \in_array($errno, self::NOT_SENT_ERRORS, true) || $timedOutBeforeSending;
 
         if ($notSent) {
             return new ConnectionException($message, null, $this->hostUnreachable($errno));
