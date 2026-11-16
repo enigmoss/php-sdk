@@ -55,6 +55,12 @@ final class TestKernel extends Kernel
                     'payment_key' => 'second-secret',
                     'transport' => 'symfony',
                 ],
+                'with_fallback' => [
+                    'base_url' => 'https://api.example.com',
+                    'project_id' => '3f2b8c1e-5d4a-4e7b-9c6f-1a2b3c4d5e6f',
+                    'payment_key' => 'test-payment-secret',
+                    'fallback_base_url' => 'https://api.example.org',
+                ],
             ],
         ]);
     }

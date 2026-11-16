@@ -49,6 +49,9 @@ final class CheckCommand extends Command
         $client = $this->client($input);
         $config = $client->config();
         $ok = true;
+        if ($config->fallbackOrigin !== null) {
+            $io->writeln('Fallback host: ' . $config->fallbackOrigin);
+        }
 
         foreach (array_filter(['payment' => $config->paymentKey, 'payout' => $config->payoutKey]) as $type => $key) {
             $single = $type === 'payment'
@@ -58,6 +61,8 @@ final class CheckCommand extends Command
                 $project = $single->project->get();
                 $io->success(\sprintf('%s key: project "%s" (%s)', ucfirst($type), $project->name, $project->id));
                 $io->listing($project->permissions === [] ? ['(no permissions)'] : $project->permissions);
+                $origin = $single->config()->origin;
+                $io->writeln('API origin: ' . $origin . ($origin === $config->origin ? '' : \sprintf(' (named by the fallback host; %s could not be reached)', $config->origin)));
                 $drift = $project->serverTime - time();
                 if (abs($drift) > 30) {
                     $io->warning(\sprintf('Clock drift %+d s: sync the server clock (NTP).', $drift));

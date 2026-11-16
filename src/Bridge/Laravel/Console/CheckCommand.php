@@ -24,6 +24,9 @@ final class CheckCommand extends Command
         $connection = $this->option('connection');
         $client = $manager->connection(\is_string($connection) ? $connection : null);
         $config = $client->config();
+        if ($config->fallbackOrigin !== null) {
+            $this->line('Fallback host: ' . $config->fallbackOrigin);
+        }
 
         $keys = array_filter(['payment' => $config->paymentKey, 'payout' => $config->payoutKey]);
         $ok = true;
@@ -36,6 +39,8 @@ final class CheckCommand extends Command
                 $drift = $project->serverTime - time();
                 $this->info(\sprintf('%s key: OK - project "%s" (%s)', ucfirst($type), $project->name, $project->id));
                 $this->line('  permissions: ' . ($project->permissions === [] ? '(none)' : implode(', ', $project->permissions)));
+                $origin = $single->config()->origin;
+                $this->line('  API origin: ' . $origin . ($origin === $config->origin ? '' : \sprintf(' (named by the fallback host; %s could not be reached)', $config->origin)));
                 if (abs($drift) > 30) {
                     $this->warn(\sprintf('  clock drift: %+d s - sync the server clock (NTP); the SDK compensates, but signatures expire after 300 s.', $drift));
                 }

@@ -24,12 +24,14 @@ use Enigmoss\Transaction\TransactionService;
 use Enigmoss\Transfer\TransferService;
 use Enigmoss\Wallet\WalletService;
 use Enigmoss\Webhook\WebhookService;
+use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Log\LogManager;
 
 /**
- * Builds and caches one client per configured connection. Clients are stateless, so caching
- * them is safe under Octane.
+ * Builds and caches one client per configured connection. A client keeps no request state, so
+ * caching it is safe under Octane. With "fallback_base_url" the API origin learned from the
+ * fallback host is kept in the cache, so it survives the request under PHP-FPM.
  */
 final class EnigmossManager
 {
@@ -41,6 +43,7 @@ final class EnigmossManager
     public function __construct(
         private readonly Config $config,
         private readonly ?LogManager $log = null,
+        private readonly ?Cache $cache = null,
     ) {}
 
     public function connection(?string $name = null): EnigmossClient
@@ -159,6 +162,9 @@ final class EnigmossManager
             $observers[] = new LoggerObserver($this->log->channel($channel));
         }
 
+        $fallback = $connection['fallback_base_url'] ?? null;
+        $fallback = \is_string($fallback) && $fallback !== '' ? $fallback : null;
+
         return new EnigmossClient(
             new ClientConfig(
                 baseUrl: self::string($connection, 'base_url', $name),
@@ -171,6 +177,8 @@ final class EnigmossManager
                 maxRetryDelay: (float) $this->number('enigmoss.max_retry_delay', 10),
                 webhookTolerance: (int) $this->number('enigmoss.webhooks.tolerance', 300),
                 allowInsecureHttp: $this->config->get('enigmoss.allow_insecure_http') === true,
+                fallbackBaseUrl: $fallback,
+                originStore: $fallback === null || $this->cache === null || $this->fake !== null ? null : new CacheOriginStore($this->cache),
             ),
             $this->fake,
             observers: $observers,

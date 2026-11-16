@@ -23,7 +23,8 @@ use Psr\Http\Message\StreamFactoryInterface;
  * set timeouts - PSR-18 has no per-request options, so RequestOptions::$timeout is not applied.
  * PSR-18 cannot tell whether a failed request was sent, so every failure is reported with
  * SendPhase::Unknown and money-moving requests are retried only when an Idempotency-Key protects
- * them.
+ * them. For the same reason the API-origin fallback (ClientConfig::$fallbackBaseUrl) never starts
+ * with this transport: it needs a transport that knows the connection was never established.
  */
 final class Psr18Transport implements TransportInterface
 {

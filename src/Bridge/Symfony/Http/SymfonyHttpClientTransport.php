@@ -15,6 +15,10 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 /**
  * Sends requests through Symfony HttpClient (profiler, MockHttpClient). Opt-in: the bundle uses
  * the built-in curl transport unless "transport: symfony" is configured.
+ *
+ * Symfony HttpClient does not tell a connection that was never established from a failure after
+ * the request was sent, so failures are reported with SendPhase::Unknown and the API-origin
+ * fallback (ClientConfig::$fallbackBaseUrl) never starts with this transport.
  */
 final class SymfonyHttpClientTransport implements TransportInterface
 {

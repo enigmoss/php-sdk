@@ -38,6 +38,7 @@ final class EnigmossServiceProvider extends ServiceProvider
         $this->app->singleton(EnigmossManager::class, static fn(Application $app): EnigmossManager => new EnigmossManager(
             $app->make(ConfigRepository::class),
             $app->bound('log') ? $app->make(LogManager::class) : null,
+            $app->bound('cache') ? $app->make(CacheRepository::class) : null,
         ));
         $this->app->bind(EnigmossClient::class, static fn(Application $app): EnigmossClient => $app->make(EnigmossManager::class)->connection());
         $this->app->bind(WebhookVerifier::class, static fn(Application $app): WebhookVerifier => $app->make(EnigmossClient::class)->webhooks->verifier());

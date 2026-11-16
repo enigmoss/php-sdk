@@ -33,6 +33,7 @@
         "ext-curl": "Required by the built-in default transport (CurlTransport).",
         "psr/http-client": "Use any PSR-18 client through Enigmoss\\Bridge\\Psr18\\Psr18Transport.",
         "psr/http-factory": "PSR-17 factories for the PSR-18 transport.",
+        "psr/simple-cache": "Share the API origin learned from the fallback host between processes through Enigmoss\\Bridge\\Psr16\\Psr16OriginStore.",
         "laravel/framework": "Laravel 10+: auto-discovered EnigmossServiceProvider, facade, webhook route.",
         "symfony/http-kernel": "Symfony 6.4+: EnigmossBundle, webhook argument resolver.",
         "psr/log": "Log SDK calls through Enigmoss\\Bridge\\Psr3\\LoggerObserver.",

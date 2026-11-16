@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Enigmoss\Tests\Bridge\Symfony;
 
+use Enigmoss\Bridge\Symfony\Http\CacheOriginStore;
 use Enigmoss\EnigmossClient;
 use Enigmoss\Event\PaymentEvent;
 use Enigmoss\Secret;
@@ -52,6 +53,28 @@ final class SymfonyBridgeTest extends TestCase
         self::assertTrue($deduplicator->claim('019b7710-0000-7000-8000-00000000dd01'));
         // The cache outlives the test process (kernel cache dir): leave the key free for the next run.
         $deduplicator->release('019b7710-0000-7000-8000-00000000dd01');
+    }
+
+    public function testAFallbackBaseUrlKeepsTheLearnedOriginInTheCachePool(): void
+    {
+        $container = $this->kernel()->getContainer()->get('test.service_container');
+        self::assertInstanceOf(\Symfony\Component\DependencyInjection\ContainerInterface::class, $container);
+
+        $plain = $container->get(EnigmossClient::class);
+        self::assertInstanceOf(EnigmossClient::class, $plain);
+        self::assertNull($plain->config()->fallbackOrigin);
+        self::assertNull($plain->config()->originStore);
+
+        $client = $container->get('enigmoss.client.with_fallback');
+        self::assertInstanceOf(EnigmossClient::class, $client);
+        $config = $client->config();
+        self::assertSame('https://api.example.org', $config->fallbackOrigin);
+        self::assertInstanceOf(CacheOriginStore::class, $config->originStore);
+
+        $key = 'enigmoss_origin_' . bin2hex(random_bytes(8));
+        self::assertNull($config->originStore->get($key));
+        $config->originStore->set($key, '{"origin":"https://api2.example.com"}', 60);
+        self::assertSame('{"origin":"https://api2.example.com"}', $config->originStore->get($key));
     }
 
     public function testControllerReceivesVerifiedEvent(): void

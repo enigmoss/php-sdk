@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Enigmoss\Tests\Bridge\Laravel;
 
+use Enigmoss\Bridge\Laravel\CacheOriginStore;
 use Enigmoss\Bridge\Laravel\EnigmossManager;
 use Enigmoss\Bridge\Laravel\EnigmossServiceProvider;
 use Enigmoss\Bridge\Laravel\Events\WebhookReceived;
@@ -49,6 +50,12 @@ final class LaravelBridgeTest extends TestCase
             'base_url' => 'https://api.example.com',
             'project_id' => 'd6a7f0c2-6b1e-4b9a-9f3e-2c4d5e6f7a8b',
             'payment_key' => 'second-secret',
+        ]);
+        $config->set('enigmoss.connections.with-fallback', [
+            'base_url' => 'https://api.example.com',
+            'project_id' => Fixtures::PROJECT_ID,
+            'payment_key' => 'test-payment-secret',
+            'fallback_base_url' => 'https://api.example.org/',
         ]);
         $config->set('cache.default', 'array');
         $config->set('queue.default', 'sync');
@@ -124,6 +131,22 @@ final class LaravelBridgeTest extends TestCase
         self::assertSame(2, $calls);
     }
 
+    public function testAFallbackBaseUrlKeepsTheLearnedOriginInTheCache(): void
+    {
+        $plain = Enigmoss::connection()->config();
+        self::assertNull($plain->fallbackOrigin);
+        self::assertNull($plain->originStore);
+
+        $config = Enigmoss::connection('with-fallback')->config();
+        self::assertSame('https://api.example.org', $config->fallbackOrigin);
+        self::assertInstanceOf(CacheOriginStore::class, $config->originStore);
+
+        $config->originStore->set('enigmoss_origin_test', '{"origin":"https://api2.example.com"}', 60);
+        self::assertSame('{"origin":"https://api2.example.com"}', $config->originStore->get('enigmoss_origin_test'));
+        self::assertSame('{"origin":"https://api2.example.com"}', $this->application()->make(\Illuminate\Contracts\Cache\Repository::class)->get('enigmoss_origin_test'));
+        self::assertNull($config->originStore->get('enigmoss_origin_missing'));
+    }
+
     public function testCheckCommandReportsBothKeys(): void
     {
         $transport = $this->application()->make(EnigmossManager::class)->fake();
@@ -132,7 +155,10 @@ final class LaravelBridgeTest extends TestCase
 
         $command = $this->artisan('enigmoss:check');
         self::assertInstanceOf(PendingCommand::class, $command);
-        $command->expectsOutputToContain('Payment key: OK')->expectsOutputToContain('Payout key: OK')->assertSuccessful();
+        $command->expectsOutputToContain('Payment key: OK')
+            ->expectsOutputToContain('API origin: https://api.example.com')
+            ->expectsOutputToContain('Payout key: OK')
+            ->assertSuccessful();
     }
 
     private function application(): \Illuminate\Foundation\Application

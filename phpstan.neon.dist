@@ -13,6 +13,7 @@ parameters:
         - src/Bridge/Laravel (?)
         - src/Bridge/Symfony (?)
         - src/Bridge/Psr18 (?)
+        - src/Bridge/Psr16 (?)
         - tests/Bridge (?)
         - tests/Support/Symfony (?)
     phpat:

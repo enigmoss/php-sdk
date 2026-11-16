@@ -38,6 +38,8 @@ final class EnigmossBundle extends AbstractBundle
                 ->scalarNode('logger')->defaultNull()->info('Logger service id, e.g. "logger"; null disables logging.')->end()
                 ->integerNode('webhook_dedupe_ttl')->defaultValue(259200)->end()
                 ->scalarNode('webhook_dedupe_cache')->defaultValue('cache.app')->end()
+                ->scalarNode('origin_cache')->defaultValue('cache.app')
+                    ->info('PSR-6 pool that keeps the API origin learned from the fallback host; null keeps it in memory only.')->end()
                 ->arrayNode('clients')
                     ->requiresAtLeastOneElement()
                     ->useAttributeAsKey('name')
@@ -53,6 +55,8 @@ final class EnigmossBundle extends AbstractBundle
                             ->floatNode('max_retry_delay')->defaultValue(10.0)->end()
                             ->integerNode('webhook_tolerance')->defaultValue(300)->end()
                             ->booleanNode('allow_insecure_http')->defaultFalse()->end()
+                            ->scalarNode('fallback_base_url')->defaultNull()
+                                ->info('Host asked for the current API origin when base_url cannot be reached (curl transport only).')->end()
                             ->enumNode('transport')->values(['curl', 'symfony'])->defaultValue('curl')
                                 ->info('"symfony" sends requests through the http_client service (profiler, MockHttpClient).')->end()
                         ->end()
@@ -74,6 +78,7 @@ final class EnigmossBundle extends AbstractBundle
         $default = \is_string($config['default_client'] ?? null) ? $config['default_client'] : 'default';
         $dedupeCache = \is_string($config['webhook_dedupe_cache'] ?? null) ? $config['webhook_dedupe_cache'] : 'cache.app';
         $dedupeTtl = \is_int($config['webhook_dedupe_ttl'] ?? null) ? $config['webhook_dedupe_ttl'] : 259200;
+        $originCache = \is_string($config['origin_cache'] ?? null) && $config['origin_cache'] !== '' ? $config['origin_cache'] : null;
 
         foreach ($clients as $name => $client) {
             if (!\is_array($client)) {
@@ -90,6 +95,9 @@ final class EnigmossBundle extends AbstractBundle
                     $client,
                     $transport === 'symfony' ? new Reference('http_client') : null,
                     $logger === null ? null : new Reference($logger, ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                    $originCache === null || !\is_string($client['fallback_base_url'] ?? null) || $client['fallback_base_url'] === ''
+                        ? null
+                        : new Reference($originCache, ContainerInterface::NULL_ON_INVALID_REFERENCE),
                 ]);
             $builder->registerAliasForArgument($clientId, EnigmossClient::class, $name . 'Client');
 
