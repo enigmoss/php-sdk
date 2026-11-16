@@ -4,15 +4,13 @@ declare(strict_types=1);
 
 namespace Enigmoss\Bridge\Psr18;
 
-use Enigmoss\Exception\ConnectionException;
 use Enigmoss\Exception\SendPhase;
 use Enigmoss\Exception\TransportException;
 use Enigmoss\Http\HttpRequest;
 use Enigmoss\Http\HttpResponse;
 use Enigmoss\Http\TransportInterface;
+use Psr\Http\Client\ClientExceptionInterface;
 use Psr\Http\Client\ClientInterface;
-use Psr\Http\Client\NetworkExceptionInterface;
-use Psr\Http\Client\RequestExceptionInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 
@@ -23,8 +21,9 @@ use Psr\Http\Message\StreamFactoryInterface;
  *
  * Configure the client yourself: disable redirects ("allow_redirects" => false for Guzzle) and
  * set timeouts - PSR-18 has no per-request options, so RequestOptions::$timeout is not applied.
- * PSR-18 cannot tell whether a failed request was sent, so network errors are reported with
- * SendPhase::Unknown and money-moving requests are retried only when an Idempotency-Key protects them.
+ * PSR-18 cannot tell whether a failed request was sent, so every failure is reported with
+ * SendPhase::Unknown and money-moving requests are retried only when an Idempotency-Key protects
+ * them.
  */
 final class Psr18Transport implements TransportInterface
 {
@@ -48,12 +47,11 @@ final class Psr18Transport implements TransportInterface
 
         try {
             $response = $this->client->sendRequest($psrRequest);
-        } catch (RequestExceptionInterface $e) {
-            // The client rejected the request before sending it.
-            throw new ConnectionException('The HTTP client rejected the request: ' . $e->getMessage(), $e);
-        } catch (NetworkExceptionInterface $e) {
-            throw new TransportException('HTTP request failed: ' . $e->getMessage(), SendPhase::Unknown, false, $e);
-        } catch (\Psr\Http\Client\ClientExceptionInterface $e) {
+        } catch (ClientExceptionInterface $e) {
+            // PSR-18 reserves RequestExceptionInterface for a request the client refused to send,
+            // but real clients use it wider: Guzzle throws its RequestException (which implements
+            // the interface) for failures in the middle of a transfer too. No PSR-18 exception
+            // proves that nothing was sent, so none is reported as SendPhase::NotSent.
             throw new TransportException('HTTP request failed: ' . $e->getMessage(), SendPhase::Unknown, false, $e);
         }
 

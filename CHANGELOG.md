@@ -38,3 +38,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Examples and documentation check `outcomeUnknown()` before `isOrderIdTaken()`, so `idempotency.in_progress` is never reported as "order_id taken".
 - `IpNotAllowedException` is thrown only for `auth.ip_forbidden`.
+- `Psr18Transport` no longer reports a PSR-18 `RequestExceptionInterface` as "not sent" (`ConnectionException`): clients such as Guzzle throw it for failures in the middle of a transfer too. Every PSR-18 failure is now a `TransportException` with `SendPhase::Unknown`, so a money-moving request is repeated only when an `Idempotency-Key` protects it.
