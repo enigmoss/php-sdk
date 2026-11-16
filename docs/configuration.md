@@ -232,7 +232,7 @@ $config = new ClientConfig(
 | `Enigmoss\Bridge\Laravel\CacheOriginStore` | The Laravel cache. Wired automatically for connections with `fallback_base_url`; see [Laravel](laravel.md#api-origin-fallback). |
 | `Enigmoss\Bridge\Symfony\Http\CacheOriginStore` | A PSR-6 pool, `cache.app` by default. Wired automatically for clients with `fallback_base_url`; see [Symfony](symfony.md#api-origin-fallback). |
 
-The interface has two methods, `get(string $key): ?string` and `set(string $key, string $value, int $ttl): void`. The SDK stores one short JSON string per project and base URL (the origin with its expiry, and the time of the 5 minute pause), never a key or a response. An origin read from the store passes the same check as one received from the fallback host. A store that throws never breaks a call. Changing `baseUrl`, `fallbackBaseUrl` or the project starts from a clean entry.
+The interface has two methods, `get(string $key): ?string` and `set(string $key, string $value, int $ttl): void`. The SDK stores one short JSON string per project and base URL (the origin with its expiry, and the time of the 5 minute pause), never a key or a response. The record carries an HMAC made with the project key, so something that can write to your cache but does not know the key cannot point the client at another host; a record with a wrong or missing HMAC is ignored. An origin read from the store also passes the same check as one received from the fallback host. A store that throws never breaks a call. Changing `baseUrl`, `fallbackBaseUrl` or the project starts from a clean entry.
 
 ### Seeing it happen
 

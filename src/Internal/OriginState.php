@@ -13,6 +13,10 @@ use Enigmoss\ClientConfig;
  * until which the fallback is not asked again. Kept in memory and, when ClientConfig has an
  * origin store, shared with other processes through it.
  *
+ * The store is outside the SDK, and what is read from it decides where requests go. Every
+ * record therefore carries an HMAC made with the project key: a record written by anything that
+ * does not know the key is ignored, and the origin passes the shape check again.
+ *
  * @internal
  */
 final class OriginState
@@ -85,8 +89,12 @@ final class OriginState
         }
 
         $until = $record['until'] ?? null;
-        // The cache is outside the SDK: an origin read from it passes the same check as one
-        // received from the fallback host.
+        $mac = $record['mac'] ?? null;
+        if (!\is_string($mac) || !hash_equals($this->mac($record['origin'] ?? null, $until, $record['paused'] ?? null), $mac)) {
+            return; // Not written by a client that knows the project key.
+        }
+        // An origin read from the cache passes the same check as one received from the
+        // fallback host.
         $origin = ApiOrigin::fromResponse($record['origin'] ?? null, $this->config->allowInsecureHttp);
         if ($origin !== null && (\is_int($until) || \is_float($until)) && $until > $now && $until > $this->movedUntil) {
             $this->moved = $origin;
@@ -143,6 +151,18 @@ final class OriginState
         $this->probing = false;
     }
 
+    /**
+     * HMAC of a stored record, keyed with the project key and bound to the store key (base URL,
+     * fallback host and project), so a record cannot be forged or moved to another entry.
+     */
+    private function mac(mixed $origin, mixed $until, mixed $paused): string
+    {
+        $key = $this->config->paymentKey ?? $this->config->payoutKey;
+        $payload = "enigmoss-origin-store\n" . $this->storeKey . "\n" . json_encode([$origin, $until, $paused], JSON_UNESCAPED_SLASHES);
+
+        return hash_hmac('sha256', $payload, $key === null ? '' : $key->reveal());
+    }
+
     private function save(float $now): void
     {
         $store = $this->config->originStore;
@@ -156,6 +176,7 @@ final class OriginState
             'until' => $moved ? (int) ceil($this->movedUntil) : null,
             'paused' => $now < $this->pausedUntil ? (int) ceil($this->pausedUntil) : null,
         ];
+        $record['mac'] = $this->mac($record['origin'], $record['until'], $record['paused']);
         $ttl = (int) ceil(max($moved ? $this->movedUntil : 0.0, $this->pausedUntil) - $now);
 
         try {

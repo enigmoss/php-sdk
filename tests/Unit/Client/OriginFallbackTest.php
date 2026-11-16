@@ -615,10 +615,12 @@ final class OriginFallbackTest extends TestCase
         }
         self::assertCount(1, $transport->to(self::FALLBACK));
         // Only the time is stored: neither the response nor the error.
-        self::assertSame(['origin' => null, 'until' => null], array_diff_key((array) json_decode(array_values($store->values)[0][0], true), ['paused' => 0]));
+        $record = (array) json_decode(array_values($store->values)[0][0], true);
+        self::assertSame(['origin', 'until', 'paused', 'mac'], array_keys($record));
+        self::assertSame([null, null], [$record['origin'], $record['until']]);
     }
 
-    public function testABrokenOrPoisonedStoreNeverBreaksACall(): void
+    public function testABrokenStoreNeverBreaksACall(): void
     {
         $clock = new FakeClock();
         $broken = new class implements OriginStoreInterface {
@@ -639,18 +641,49 @@ final class OriginFallbackTest extends TestCase
         $client = $this->client($transport, $clock, $broken);
         $client->project->get();
         self::assertSame(self::MOVED, $client->config()->origin);
+    }
 
-        // An origin read from the cache passes the same shape check as one from the fallback host.
-        foreach (['http://evil.example.com', 'https://203.0.113.10', 'https://api2.example.com/x', 42] as $origin) {
-            $store = new ArrayOriginStore($clock);
-            $probe = $this->client(new RoutedTransport(), $clock, $store);
-            $probe->config();
-            $store->values[array_key_first($store->values) ?? $this->storeKey($store, $clock)] = [
-                (string) json_encode(['origin' => $origin, 'until' => (int) $clock->time + 3600, 'paused' => null]),
-                $clock->time + 3600,
-            ];
-            self::assertSame(self::PRIMARY, $this->client(new RoutedTransport(), $clock, $store)->config()->origin);
+    public function testARecordInTheStoreMustBeSignedWithTheProjectKey(): void
+    {
+        $clock = new FakeClock();
+        $store = new ArrayOriginStore($clock);
+        $transport = (new RoutedTransport())
+            ->on(self::PRIMARY, self::unreachable())
+            ->on(self::FALLBACK, self::brand(self::MOVED))
+            ->on(self::MOVED, self::ok(self::PROJECT_DATA));
+        $this->client($transport, $clock, $store)->project->get();
+        $key = array_key_first($store->values);
+        self::assertIsString($key);
+        $genuine = $store->values[$key];
+        $record = (array) json_decode($genuine[0], true);
+        $until = $record['until'] ?? null;
+        self::assertIsInt($until);
+        self::assertSame(self::MOVED, $this->client($transport, $clock, $store)->config()->origin);
+
+        // Whoever can write to the cache but does not know the key cannot move the client:
+        // not to another host, not for longer, not with a record copied from another entry.
+        $forgeries = [
+            'another origin' => ['origin' => 'https://evil.example.org'] + $record,
+            'a longer life' => ['until' => $until + 86400] + $record,
+            'no mac' => array_diff_key($record, ['mac' => 0]),
+            'a made-up mac' => ['mac' => str_repeat('0', 64)] + $record,
+            'not an object' => 'https://evil.example.org',
+        ];
+        foreach ($forgeries as $name => $forged) {
+            $store->values[$key] = [(string) json_encode($forged, JSON_UNESCAPED_SLASHES), $genuine[1]];
+            self::assertSame(self::PRIMARY, $this->client($transport, $clock, $store)->config()->origin, $name);
         }
+
+        // The genuine record is of no use to a client with another key: it could not have
+        // written it.
+        $store->values[$key] = $genuine;
+        $stranger = new EnigmossClient(
+            new ClientConfig(self::PRIMARY, ClientFactory::PROJECT, new Secret('another-payment-secret'), fallbackBaseUrl: self::FALLBACK, originStore: $store),
+            $transport,
+            $clock,
+            $clock,
+        );
+        self::assertSame(self::PRIMARY, $stranger->config()->origin);
     }
 
     public function testACallMadeWhileTheLookupRunsDoesNotStartAnotherOne(): void
@@ -715,21 +748,6 @@ final class OriginFallbackTest extends TestCase
             $clock,
             $observers,
         );
-    }
-
-    private function storeKey(ArrayOriginStore $store, FakeClock $clock): string
-    {
-        // Make the SDK write once to learn the key it uses for this configuration.
-        $transport = (new RoutedTransport())->on(self::PRIMARY, self::unreachable())->on(self::FALLBACK, self::unreachable());
-
-        try {
-            $this->client($transport, $clock, $store)->project->get();
-        } catch (ConnectionException) {
-        }
-        $key = array_key_first($store->values);
-        self::assertIsString($key);
-
-        return $key;
     }
 
     /**
