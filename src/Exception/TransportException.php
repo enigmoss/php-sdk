@@ -9,6 +9,11 @@ namespace Enigmoss\Exception;
  *
  * Custom transports must throw this class (or ConnectionException) and report the send phase
  * honestly: retries of money-moving requests depend on it.
+ *
+ * $hostUnreachable is stronger than SendPhase::NotSent: the transport knows that the connection
+ * to the API host itself was never established (DNS failure, refused connection, TLS handshake
+ * failure, connect timeout) and that no proxy stands between them. Only such a failure starts
+ * the API-origin fallback (ClientConfig::$fallbackBaseUrl). Leave it false when unsure.
  */
 class TransportException extends \RuntimeException implements EnigmossException
 {
@@ -19,6 +24,7 @@ class TransportException extends \RuntimeException implements EnigmossException
         public readonly SendPhase $sendPhase = SendPhase::Unknown,
         public readonly bool $timedOut = false,
         ?\Throwable $previous = null,
+        public readonly bool $hostUnreachable = false,
     ) {
         parent::__construct($message, 0, $previous);
     }

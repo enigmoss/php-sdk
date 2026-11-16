@@ -9,8 +9,11 @@ namespace Enigmoss\Exception;
  */
 final class ConnectionException extends TransportException
 {
-    public function __construct(string $message, ?\Throwable $previous = null)
+    /**
+     * @param bool $hostUnreachable The connection to the API host itself was never established and no proxy is in the way; see TransportException.
+     */
+    public function __construct(string $message, ?\Throwable $previous = null, bool $hostUnreachable = false)
     {
-        parent::__construct($message, SendPhase::NotSent, false, $previous);
+        parent::__construct($message, SendPhase::NotSent, false, $previous, $hostUnreachable);
     }
 }

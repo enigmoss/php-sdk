@@ -15,6 +15,11 @@ use Enigmoss\Exception\TransportException;
  * Every request gets its own curl handle, so a shared client is safe under coroutine runtimes
  * that hook curl; connections and DNS lookups are reused through a curl share handle.
  * Redirects are never followed, TLS peers are always verified.
+ *
+ * It is the only bundled transport that can start the API-origin fallback
+ * (ClientConfig::$fallbackBaseUrl): curl tells a connection that was never established (DNS,
+ * refused connection, TLS handshake, connect timeout) from a failure after the request was sent.
+ * Behind an outgoing proxy only a failed DNS lookup of the API host counts.
  */
 final class CurlTransport implements TransportInterface
 {
@@ -32,6 +37,13 @@ final class CurlTransport implements TransportInterface
     ];
 
     private const TIMEOUT_ERROR = 28;
+
+    private const RESOLVE_HOST_ERROR = 6;
+
+    private const RESOLVE_PROXY_ERROR = 5;
+
+    /** libcurl reads these when CURLOPT_PROXY is not set ("http_proxy" only in lower case). */
+    private const PROXY_VARIABLES = ['https_proxy', 'HTTPS_PROXY', 'http_proxy', 'all_proxy', 'ALL_PROXY'];
 
     private ?\CurlShareHandle $share = null;
 
@@ -125,10 +137,39 @@ final class CurlTransport implements TransportInterface
             || ($errno === self::TIMEOUT_ERROR && $preTransferTime <= 0.0 && $requestSize === 0);
 
         if ($notSent) {
-            return new ConnectionException($message);
+            return new ConnectionException($message, null, $this->hostUnreachable($errno));
         }
 
         return new TransportException($message, SendPhase::Sent, $errno === self::TIMEOUT_ERROR);
+    }
+
+    /**
+     * True when the failure proves that the API host itself could not be reached. Behind a proxy
+     * a refused connection, a connect timeout or a TLS error may be the proxy's own, so only a
+     * failure to resolve the API host counts there.
+     */
+    private function hostUnreachable(int $errno): bool
+    {
+        if ($errno === self::RESOLVE_PROXY_ERROR) {
+            return false;
+        }
+
+        return $errno === self::RESOLVE_HOST_ERROR || !$this->mayUseProxy();
+    }
+
+    private function mayUseProxy(): bool
+    {
+        if ($this->proxy !== null) {
+            return true;
+        }
+        foreach (self::PROXY_VARIABLES as $name) {
+            $value = getenv($name);
+            if (\is_string($value) && $value !== '') {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function share(): \CurlShareHandle
