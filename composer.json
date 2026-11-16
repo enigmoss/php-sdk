@@ -1,8 +1,14 @@
 {
-    "name": "enigmoss/enigmoss-php",
+    "name": "enigmoss/php-sdk",
     "description": "Official PHP SDK for the Enigmoss Project API v4: payments, static wallets, payouts, refunds, transfers and signed webhooks.",
     "type": "library",
     "license": "MIT",
+    "homepage": "https://github.com/enigmoss/php-sdk",
+    "support": {
+        "issues": "https://github.com/enigmoss/php-sdk/issues",
+        "source": "https://github.com/enigmoss/php-sdk",
+        "docs": "https://github.com/enigmoss/php-sdk/tree/main/docs"
+    },
     "keywords": [
         "enigmoss",
         "crypto",

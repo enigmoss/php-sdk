@@ -7,7 +7,7 @@ The provider registers only lazy bindings, so `package:discover` and `config:cac
 ## Install and configure
 
 ```bash
-composer require enigmoss/enigmoss-php
+composer require enigmoss/php-sdk
 ```
 
 Add your credentials to `.env`:

@@ -3,7 +3,7 @@
 ## 1. Install
 
 ```bash
-composer require enigmoss/enigmoss-php
+composer require enigmoss/php-sdk
 ```
 
 PHP 8.1 or newer and `ext-json` are required. The default HTTP transport uses `ext-curl`; if you cannot use curl, see [Custom HTTP client](custom-http-client.md) and the PSR-18 and Symfony transports in [Configuration](configuration.md#transports).

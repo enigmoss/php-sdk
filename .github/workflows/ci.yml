@@ -110,5 +110,5 @@ jobs:
           mkdir -p /tmp/app && cd /tmp/app
           composer init -n --name=check/app
           composer config repositories.sdk "{\"type\":\"artifact\",\"url\":\"$GITHUB_WORKSPACE/build\"}"
-          composer require "enigmoss/enigmoss-php:*@dev" --prefer-dist
+          composer require "enigmoss/php-sdk:*@dev" --prefer-dist
           php -r 'require "vendor/autoload.php"; new Enigmoss\ClientConfig("https://api.example.com", "3f2b8c1e-5d4a-4e7b-9c6f-1a2b3c4d5e6f", new Enigmoss\Secret("k")); echo "ok\n";'

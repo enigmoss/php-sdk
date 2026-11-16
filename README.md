@@ -2,7 +2,7 @@
 
 The official PHP SDK for the Enigmoss Project API v4: accept crypto payments, run static wallets, send payouts and refunds, and receive signed webhooks, with typed objects and money-safe retries.
 
-[![Packagist Version](https://img.shields.io/packagist/v/enigmoss/enigmoss-php.svg)](https://packagist.org/packages/enigmoss/enigmoss-php)
+[![Packagist Version](https://img.shields.io/packagist/v/enigmoss/php-sdk.svg)](https://packagist.org/packages/enigmoss/php-sdk)
 [![PHP >= 8.1](https://img.shields.io/badge/php-%3E%3D8.1-777bb4.svg)](https://www.php.net/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -28,7 +28,7 @@ Extensions: `ext-json` (always), `ext-curl` (default transport only).
 ## Install
 
 ```bash
-composer require enigmoss/enigmoss-php
+composer require enigmoss/php-sdk
 ```
 
 ## Quickstart

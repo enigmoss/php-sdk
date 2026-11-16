@@ -5,7 +5,7 @@ Supported: Symfony 6.4, 7.4 and 8.x. The bundle is `Enigmoss\Bridge\Symfony\Enig
 ## Install
 
 ```bash
-composer require enigmoss/enigmoss-php
+composer require enigmoss/php-sdk
 ```
 
 Register the bundle in `config/bundles.php`:
