@@ -17,21 +17,22 @@ Namespace Enigmoss\. PHP >= 8.1, no runtime deps (ext-json; ext-curl for default
 - Enums can gain cases: always keep a default arm (Unknown case exists). Use isFinal.
 - Fulfilment rule (the ONLY one): $payment->isSuccessful() = status->isPaid() && isFinal. A Paid payment can be non-final while an automatic conversion settles. A deposit to a static wallet has walletId !== null and orderId === null: branch on walletId first.
 - Request DTO constructor parameter NAMES are API (use named args). Response model constructors and Enigmoss\Internal are NOT API.
-- Client is stateless, shareable, NOT serializable (do not put in queue payloads).
+- Client is stateless (apart from clock drift and the API origin learned through the fallback), shareable, NOT serializable (do not put in queue payloads).
 
 ## Setup
 use Enigmoss\{ClientConfig, EnigmossClient, Secret};
 $e = new EnigmossClient(new ClientConfig(baseUrl:'https://api.example.com', projectId:'<uuid>', paymentKey:new Secret($k), payoutKey:new Secret($p)));
-ClientConfig(baseUrl, projectId, ?Secret paymentKey, ?Secret payoutKey, float timeout=30, float connectTimeout=10, int maxRetries=2, float maxRetryDelay=10, int webhookTolerance=300, bool allowInsecureHttp=false, ?AppInfo appInfo)
+ClientConfig(baseUrl, projectId, ?Secret paymentKey, ?Secret payoutKey, float timeout=30, float connectTimeout=10, int maxRetries=2, float maxRetryDelay=10, int webhookTolerance=300, bool allowInsecureHttp=false, ?AppInfo appInfo, ?string fallbackBaseUrl=null, ?Http\OriginStoreInterface originStore=null)
+API origin fallback (only with fallbackBaseUrl): retries first; then, only if the last attempt proves the API host is unreachable (DNS, refused, TLS handshake, connect timeout - never a response timeout, a sent request or a proxy failure), ONE signed GET /api/v4/project/platform-brand?nonce=... to the fallback host (3 s, no retries); the answer must carry X-Response-Timestamp (+-300 s) and X-Response-Signature = hex(hmac_sha256("{ts}\n{X-Signature of the request}\n{body}", key of the request)) and name a plain https origin (no IP/localhost/.local/port!=443/path); then the SAME request (same body, same Idempotency-Key, new signature) starts over on that origin, remembered for refresh_after (1 h..7 d). Fallback host error -> that exception with message "API origin fallback failed: ...", getPrevious() = original ConnectionException, outcomeUnknown() false; same origin or fallback unreachable -> original ConnectionException; then no lookups for 5 min. Works with CurlTransport only (not behind a proxy, except DNS failures); NEVER with Psr18Transport or SymfonyHttpClientTransport. originStore shares the origin between PHP-FPM requests: Bridge\Psr16\Psr16OriginStore(CacheInterface); Laravel and Symfony bridges wire their cache automatically.
 new EnigmossClient(ClientConfig, ?TransportInterface $transport, ?ClockInterface, ?SleeperInterface, list<ObserverInterface> $observers)
 $e->withCredentials(projectId, ?Secret paymentKey, ?Secret payoutKey): EnigmossClient   // shares transport/observers
-$e->config(): ClientConfig
+$e->config(): ClientConfig   // ->origin is the API origin in use NOW (changes after a fallback); ->fallbackOrigin
 $e->request(method, path, ?array body, KeyScope scope=Payment, array query=[], bool idempotent=false, ?RequestOptions): RawResponse  // any endpoint; path after /api/v4
 Every service method takes optional last arg ?RequestOptions(idempotencyKey, timeout, maxRetries, maxRetryDelay, headers, extraBody, extraQuery, onResponse: Closure(ResponseInfo))
 
 ## Services ($e->...)
 project->get(): Project{id,name,keyType,permissions,serverTime}
-project->platformBrand(): PlatformBrand{?brand: Brand{name, ?logo: BrandLogo{url,sha256,mime,width,height}}, payformOrigin, refreshAfter (seconds to cache)}   // either key
+project->platformBrand(): PlatformBrand{?brand: Brand{name, ?logo: BrandLogo{url,sha256,mime,width,height}}, payformOrigin, refreshAfter (seconds to cache), ?apiOrigin}   // either key
 payments (payment key):
   create(CreatePaymentRequest): Payment            // perm payment_create_invoice; paymentUrl is ?string (check before redirect)
   get(id) / findByOrderId(orderId): ?Payment / list(?ListPaymentsQuery): CursorPage / iterate(?ListPaymentsQuery): Generator   // info_payments
@@ -77,7 +78,7 @@ Deduplication: WebhookDeduplicatorInterface{claim(eventId): bool (atomic, false 
 ## Errors (all implement EnigmossException::outcomeUnknown())
 ApiException{httpStatus,errorType,errorCode,retryable,details,violations,requestId,retryAfter,idempotencyKey,serverMessage,detail(key)}; getMessage() = "<server message> [<code>, request <id>] <hint>"
  ValidationException(violationsFor(field)) | BusinessRuleException | AuthenticationException(serverTime()) | PermissionDeniedException > IpNotAllowedException (only auth.ip_forbidden) | NotFoundException | ConflictException(existingResourceId(), isOrderIdTaken()) > IdempotencyException | RateLimitException | DependencyException(502-504) | ServerException(500)
-TransportException{sendPhase,timedOut,idempotencyKey()} > ConnectionException; UnexpectedResponseException; WebhookVerificationException; InvalidArgumentException; ConfigurationException.
+TransportException{sendPhase,timedOut,hostUnreachable,idempotencyKey()} > ConnectionException(message, ?previous, bool hostUnreachable=false); UnexpectedResponseException; WebhookVerificationException; InvalidArgumentException; ConfigurationException.
 Payout/refund creation is slow (up to ~160 s): those calls wait >= 180 s per attempt. Money-create retries: not-sent, 429, lock.not_acquired, idempotency.in_progress, dependency.unavailable — always with the same Idempotency-Key.
 Catch subclasses before parents. Branch on class or ErrorCode::* constants, never on message text; keep a default branch.
 outcomeUnknown true: transport sent/unknown, HTTP 5xx, idempotency.in_progress, unreadable 2xx. false: other 4xx, NotSent, local validation/config.
@@ -99,19 +100,19 @@ Refund: Pending/Processing never final; Completed/Failed typically final.
 Unknown (any enum): read isFinal, log, do not act.
 
 ## Transports
-CurlTransport(?caBundle, ?proxy) default. Bridge\Psr18\Psr18Transport(ClientInterface, RequestFactoryInterface, StreamFactoryInterface). Bridge\Symfony\Http\SymfonyHttpClientTransport(HttpClientInterface). Custom: TransportInterface::send(HttpRequest): HttpResponse; send URL/headers/body exactly, no redirects, return any status, throw TransportException with honest SendPhase (NotSent only if certain; else Unknown).
-Observers: ObserverInterface::onEvent(ClientEvent); Bridge\Psr3\LoggerObserver($psr3Logger).
+CurlTransport(?caBundle, ?proxy) default. Bridge\Psr18\Psr18Transport(ClientInterface, RequestFactoryInterface, StreamFactoryInterface). Bridge\Symfony\Http\SymfonyHttpClientTransport(HttpClientInterface). Custom: TransportInterface::send(HttpRequest): HttpResponse; send URL/headers/body exactly, no redirects, return any status, throw TransportException with honest SendPhase (NotSent only if certain; else Unknown); set hostUnreachable: true ONLY when the connection to the API host itself was provably never established (it starts the API origin fallback).
+Observers: ObserverInterface::onEvent(ClientEvent{type: ClientEventType RequestSending|ResponseReceived|RetryScheduled|RequestFailed|OriginChanged (cases can be added: keep a default arm), ..., ?origin, ?previousOrigin}); Bridge\Psr3\LoggerObserver($psr3Logger).
 
 ## Testing
 Testing\MockTransport: queue(), queueData(data,status,meta,headers), queueError(status,type,code,message,retryable,details,violations,retryAfter,headers), requests(), lastRequest(), lastJson(): array, sent(method, path): list<HttpRequest>, pending(). Testing\Fixtures (wire format, snake_case overrides merged recursively; ids must be UUIDs): payment/paidPayment/wallet/refund/payout/payoutQuote/transfer/transaction/balance/project/platformBrand/eventRecord(array $overrides=[]); webhook(string $event, ?array $data, string $eventId='019b7710-0000-7000-8000-000000000001', string $createdAt=...). Testing\WebhookSimulator::sign(payload, projectId, Secret, ?timestamp): SignedWebhook{body,headers, serverVariables(): array of HTTP_* vars for $this->call(...) / Symfony client} (send exact body string).
 
 ## Laravel (10-13)
-Auto-discovered. config/enigmoss.php, env ENIGMOSS_BASE_URL, _PROJECT_ID, _PAYMENT_KEY, _PAYOUT_KEY, _CONNECTION, _TIMEOUT, _CONNECT_TIMEOUT, _MAX_RETRIES, _MAX_RETRY_DELAY, _ALLOW_INSECURE_HTTP, _LOG_CHANNEL, _WEBHOOK_TOLERANCE, _WEBHOOK_QUEUE_CONNECTION, _WEBHOOK_QUEUE, _WEBHOOK_DEDUPE_TTL.
+Auto-discovered. config/enigmoss.php, env ENIGMOSS_BASE_URL, _PROJECT_ID, _PAYMENT_KEY, _PAYOUT_KEY, _CONNECTION, _TIMEOUT, _CONNECT_TIMEOUT, _MAX_RETRIES, _MAX_RETRY_DELAY, _ALLOW_INSECURE_HTTP, _FALLBACK_BASE_URL (learned origin kept in the default cache store), _LOG_CHANNEL, _WEBHOOK_TOLERANCE, _WEBHOOK_QUEUE_CONNECTION, _WEBHOOK_QUEUE, _WEBHOOK_DEDUPE_TTL.
 Facade Enigmoss::payments()->create(...) (services are METHODS), Enigmoss::connection('name'), Enigmoss::fake(): MockTransport (works without any ENIGMOSS_* config; placeholders filled). Inject EnigmossClient / WebhookVerifier / WebhookDeduplicatorInterface.
 Route::enigmossWebhooks(uri='webhooks/enigmoss', ?connection) -> verify + queue job -> event Bridge\Laravel\Events\WebhookReceived{event, connection}. POST route: exclude from CSRF (419) or use routes/api.php. Commands: enigmoss:check, enigmoss:webhook-test (--connection=).
 Listener: use event auto-discovery OR Event::listen, not both. Tests: trait Enigmoss\Bridge\Laravel\Testing\InteractsWithEnigmossWebhooks::postEnigmossWebhook(string $event, ?array $data, string $uri='/webhooks/enigmoss', ?string $connection=null, string $eventId=...).
 ## Symfony (6.4, 7.4, 8.x)
-bundles.php: Enigmoss\Bridge\Symfony\EnigmossBundle::class => ['all'=>true]. enigmoss.yaml: default_client, logger, webhook_dedupe_ttl, webhook_dedupe_cache, clients.<name>.{base_url, project_id, payment_key, payout_key, timeout, connect_timeout, max_retries, max_retry_delay, webhook_tolerance, allow_insecure_http, transport: curl|symfony}.
+bundles.php: Enigmoss\Bridge\Symfony\EnigmossBundle::class => ['all'=>true]. enigmoss.yaml: default_client, logger, webhook_dedupe_ttl, webhook_dedupe_cache, origin_cache (PSR-6 pool for the learned API origin, default cache.app), clients.<name>.{base_url, project_id, payment_key, payout_key, timeout, connect_timeout, max_retries, max_retry_delay, webhook_tolerance, allow_insecure_http, fallback_base_url (needs transport: curl), transport: curl|symfony}.
 Autowire EnigmossClient (default) or EnigmossClient $shop2Client (client "shop2"); client "shop_us" = $shopUsClient or $shop_usClient, or #[Autowire(service: 'enigmoss.client.shop_us')]. Controller arg: #[MapEnigmossWebhook(client: ?string)] WebhookEvent $event (400 on invalid). WebhookDeduplicatorInterface (PSR-6 cache, not atomic). Commands enigmoss:check, enigmoss:webhook-test (--client=<name>).
 
 ## Public classes (FQCN by namespace)
@@ -128,8 +129,8 @@ Enigmoss\Project: ProjectService, Project, KeyType. Enigmoss\Common: CursorPage,
 Enigmoss\Event: EventService, EventRecord, ListEventsQuery, BulkRedeliverRequest, BulkRedeliveryResult, DeliveryAttempt, DeliveryStatus, AttemptTrigger, WebhookEvent, PaymentEvent, PayoutEvent, RefundEvent, TestEvent, UnknownEvent, WebhookObjectType
 Enigmoss\Webhook: WebhookService, WebhookVerifier, WebhookDeduplicatorInterface, PdoWebhookDeduplicator
 Enigmoss\Exception: EnigmossException, ApiException, ValidationException, BusinessRuleException, AuthenticationException, PermissionDeniedException, IpNotAllowedException, NotFoundException, ConflictException, IdempotencyException, RateLimitException, DependencyException, ServerException, TransportException, ConnectionException, UnexpectedResponseException, WebhookVerificationException, InvalidArgumentException, ConfigurationException, ErrorCode, ErrorType, SendPhase, Violation, WebhookFailureReason
-Enigmoss\Http: TransportInterface, CurlTransport, HttpRequest, HttpResponse, RawResponse, ResponseInfo, ObserverInterface, ClientEvent, ClientEventType. Enigmoss\Retry: ClockInterface, SleeperInterface, RetryClass, SystemClock, SystemSleeper
+Enigmoss\Http: TransportInterface, CurlTransport, HttpRequest, HttpResponse, RawResponse, ResponseInfo, ObserverInterface, ClientEvent, ClientEventType, OriginStoreInterface. Enigmoss\Retry: ClockInterface, SleeperInterface, RetryClass, SystemClock, SystemSleeper
 Enigmoss\Testing: MockTransport, Fixtures, WebhookSimulator, SignedWebhook
-Enigmoss\Bridge\Laravel: EnigmossManager, EnigmossServiceProvider, CacheWebhookDeduplicator, Facades\Enigmoss, Events\WebhookReceived, Jobs\HandleEnigmossWebhook, Http\VerifyEnigmossWebhook, Http\WebhookController, Testing\InteractsWithEnigmossWebhooks, Console\CheckCommand, Console\WebhookTestCommand
-Enigmoss\Bridge\Symfony: EnigmossBundle, EnigmossClientFactory, Http\SymfonyHttpClientTransport, Webhook\CacheWebhookDeduplicator, Webhook\MapEnigmossWebhook, Webhook\WebhookValueResolver, Console\CheckCommand, Console\WebhookTestCommand
-Enigmoss\Bridge\Psr18: Psr18Transport. Enigmoss\Bridge\Psr3: LoggerObserver. Enigmoss\Internal is NOT API.
+Enigmoss\Bridge\Laravel: EnigmossManager, EnigmossServiceProvider, CacheWebhookDeduplicator, CacheOriginStore, Facades\Enigmoss, Events\WebhookReceived, Jobs\HandleEnigmossWebhook, Http\VerifyEnigmossWebhook, Http\WebhookController, Testing\InteractsWithEnigmossWebhooks, Console\CheckCommand, Console\WebhookTestCommand
+Enigmoss\Bridge\Symfony: EnigmossBundle, EnigmossClientFactory, Http\SymfonyHttpClientTransport, Http\CacheOriginStore, Webhook\CacheWebhookDeduplicator, Webhook\MapEnigmossWebhook, Webhook\WebhookValueResolver, Console\CheckCommand, Console\WebhookTestCommand
+Enigmoss\Bridge\Psr18: Psr18Transport. Enigmoss\Bridge\Psr16: Psr16OriginStore. Enigmoss\Bridge\Psr3: LoggerObserver. Enigmoss\Internal is NOT API.

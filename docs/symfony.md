@@ -35,6 +35,9 @@ enigmoss:
     # Cache pool service used by the webhook deduplicator.
     webhook_dedupe_cache: cache.app
 
+    # Cache pool that keeps the API origin learned from the fallback host; null: memory only.
+    origin_cache: cache.app
+
     # At least one client is required. The key is the client name.
     clients:
         default:
@@ -48,6 +51,7 @@ enigmoss:
             max_retry_delay: 10.0
             webhook_tolerance: 300
             allow_insecure_http: false                      # local development only
+            fallback_base_url: null                         # host asked for the API origin when base_url is unreachable
             transport: curl                                 # curl | symfony
 ```
 
@@ -191,11 +195,26 @@ services:
 
 `PdoWebhookDeduplicator` is atomic on PostgreSQL, MySQL/MariaDB and SQLite; the `CREATE TABLE` is in [Webhooks](webhooks.md#pdowebhookdeduplicator). The route must be reachable without authentication, and the firewall must not rewrite the body.
 
+## API origin fallback
+
+```yaml
+enigmoss:
+    origin_cache: cache.app
+    clients:
+        default:
+            # ...
+            fallback_base_url: '%env(default::ENIGMOSS_FALLBACK_BASE_URL)%'
+```
+
+With `fallback_base_url` the client finds the new API host by itself when `base_url` cannot be reached: after the usual retries it asks the fallback host for the current API origin of the project, checks the signature of the answer and repeats the call there with the same `Idempotency-Key`. The rules are in [Configuration](configuration.md#api-origin-fallback).
+
+The learned origin is kept in the `origin_cache` pool (`cache.app` by default) through `Enigmoss\Bridge\Symfony\Http\CacheOriginStore`, so PHP-FPM requests and workers share it; set `origin_cache: null` to keep it in the memory of the client only. The fallback needs the default **`transport: curl`**: with `transport: symfony` it never starts, because Symfony HttpClient does not report whether the connection was established.
+
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `php bin/console enigmoss:check [--client=<name>]` | Calls `project->get()` for each configured key of the client and prints the project, the permissions of the key and a clock-drift warning above 30 s. Fails with exit code `1` if a key fails. |
+| `php bin/console enigmoss:check [--client=<name>]` | Calls `project->get()` for each configured key of the client and prints the project, the permissions of the key, the API origin in use (and the fallback host, when one is configured) and a clock-drift warning above 30 s. Fails with exit code `1` if a key fails. |
 | `php bin/console enigmoss:webhook-test [--url=...] [--client=<name>]` | Asks the API to send a `webhook.test` event to `--url` (or the project default URL) and prints the delivery status and your endpoint's HTTP status. |
 
 Without `--client` both commands use the default client; `--client=shop2` selects another configured client.

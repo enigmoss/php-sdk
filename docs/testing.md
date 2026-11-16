@@ -121,6 +121,39 @@ $transport->queueData([Fixtures::payout(['order_id' => $request->orderId])]);
 $payout = $enigmoss->payouts->findByOrderId($request->orderId);
 ```
 
+To exercise the [API origin fallback](configuration.md#api-origin-fallback), queue the failure the default transport reports when the API host cannot be reached, then the signed answer of the fallback host and the response of the new origin:
+
+```php
+use Enigmoss\Exception\ConnectionException;
+use Enigmoss\Http\HttpRequest;
+use Enigmoss\Http\HttpResponse;
+
+$config = new ClientConfig(
+    baseUrl: 'https://api.example.com',
+    projectId: Fixtures::PROJECT_ID,
+    paymentKey: new Secret('test-payment-secret'),
+    maxRetries: 0,
+    fallbackBaseUrl: 'https://api.example.org',
+);
+$enigmoss = new EnigmossClient($config, $transport);
+
+$transport->queue(new ConnectionException('could not resolve host', null, hostUnreachable: true));
+$transport->queue(static function (HttpRequest $request): HttpResponse {
+    $body = json_encode(['data' => Fixtures::platformBrand(['api' => ['origin' => 'https://api2.example.com']])], JSON_UNESCAPED_SLASHES);
+    $timestamp = $request->headers['X-Timestamp'];
+
+    return new HttpResponse(200, [
+        'X-Response-Timestamp' => $timestamp,
+        'X-Response-Signature' => hash_hmac('sha256', $timestamp . "\n" . $request->headers['X-Signature'] . "\n" . $body, 'test-payment-secret'),
+    ], $body);
+});
+$transport->queueData(Fixtures::project());
+
+$enigmoss->project->get();
+self::assertSame('https://api2.example.com/api/v4/project', $transport->lastRequest()?->url);
+self::assertSame('https://api2.example.com', $enigmoss->config()->origin);
+```
+
 ### Testing retries without sleeping
 
 `EnigmossClient` accepts a `SleeperInterface` (and a `ClockInterface`). Pass a no-op sleeper so retry tests are instant:

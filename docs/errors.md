@@ -280,9 +280,16 @@ try {
 } catch (TransportException $e) {
     $e->sendPhase;          // SendPhase::NotSent | Sent | Unknown
     $e->timedOut;           // bool
+    $e->hostUnreachable;    // bool: the connection to the API host was never established
     $e->idempotencyKey();   // the key the request was sent with, repeat with it
     $e->getPrevious();      // the underlying curl / PSR-18 / Symfony exception
 }
 ```
 
 `SendPhase::Unknown` is treated exactly like `Sent`.
+
+`hostUnreachable` is `true` only when the transport knows that the API host itself could not be reached (DNS, refused connection, TLS handshake, connect timeout) and no proxy stands in between; the built-in `CurlTransport` sets it. It is what starts the [API origin fallback](configuration.md#api-origin-fallback) when `ClientConfig::$fallbackBaseUrl` is set.
+
+### Errors of the fallback host
+
+When the fallback host answers but gives no usable API origin, the call throws the exception of that answer (`NotFoundException`, `RateLimitException`, `ServerException`, `UnexpectedResponseException` for a missing or wrong signature, ...). You can tell it apart by three things: the message starts with `API origin fallback failed:`, `getPrevious()` is the `ConnectionException` of your original request, and `outcomeUnknown()` is `false` even for a 5xx, because your request was not sent. Treat it like the network error it wraps: nothing was created, repeat later with the same `order_id`.

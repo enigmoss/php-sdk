@@ -18,7 +18,7 @@ Covered by the BC promise:
 - The services (`PaymentService` and so on): method names, parameters and return types.
 - **Request and query DTOs** (`CreatePaymentRequest`, `ListPayoutsQuery`, ...): their **constructor parameter names are part of the API**, because you are expected to use named arguments. Parameters are renamed or removed only in a major release; new optional parameters are added at the end, in a minor release.
 - Response model properties (`Payment::$status`, ...), enums and exceptions, as read members.
-- `TransportInterface`, `HttpRequest`, `HttpResponse`, `ObserverInterface`, `ClientEvent`, `ClockInterface`, `SleeperInterface`.
+- `TransportInterface`, `HttpRequest`, `HttpResponse`, `ObserverInterface`, `ClientEvent`, `OriginStoreInterface`, `ClockInterface`, `SleeperInterface`.
 - `WebhookVerifier`, the `WebhookEvent` classes and `WebhookDeduplicatorInterface`.
 - The testing helpers (`MockTransport`, `Fixtures`, `WebhookSimulator`), the Laravel and Symfony bridges and their configuration keys.
 
@@ -38,6 +38,7 @@ Enums that mirror server values (`PaymentStatus`, `PayoutStatus`, `RefundStatus`
 - Prefer `isFinal` and helpers such as `PaymentStatus::isPaid()` over comparing every status.
 - `Unknown` cannot be used in a request or as a filter; the SDK throws `InvalidArgumentException`.
 - `ErrorCode` constants are a convenience list: the server may add codes at any time, so compare and keep a default branch.
+- `ClientEventType` (what observers receive) grows the same way when the SDK learns to report something new, as with `OriginChanged`: keep a default arm in a `match` over it too.
 
 ```php
 $label = match ($payout->status) {

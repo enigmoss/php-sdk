@@ -59,6 +59,17 @@ Effects:
 
 Pass the underlying exception as `$previous` for debugging.
 
+## The API origin fallback
+
+With `ClientConfig::$fallbackBaseUrl` the SDK asks a second host for the current API origin when the configured one cannot be reached; see [Configuration](configuration.md#api-origin-fallback). It starts only on a failure that carries **`hostUnreachable`**, which is stronger than `SendPhase::NotSent`:
+
+```php
+// The connection to the API host itself was never established, and no proxy is in the way.
+throw new ConnectionException($message, $previous, hostUnreachable: true);
+```
+
+Set it only when your client reports, positively, one of: the API host name did not resolve, the connection to the API host was refused or timed out while connecting, or the TLS handshake with the API host failed. Do **not** set it for a timeout that may have happened after the connection was made, for a failure of an outgoing proxy (the proxy did not resolve, refused the connection or rejected the tunnel), or when the client folds several situations into one exception class. Left `false` (the default), the fallback never starts with your transport and everything else works as before; this is what the bundled PSR-18 and Symfony transports do.
+
 ## Example: a Guzzle transport
 
 ```php
@@ -108,4 +119,4 @@ $enigmoss = new EnigmossClient($config, new GuzzleTransport(new \GuzzleHttp\Clie
 
 ## Test your transport
 
-Run your transport against a local echo server and check that the URL, headers and body arrive byte for byte (including a query string with special characters and a non-ASCII JSON body), that a 4xx or 5xx is returned as a response, that a 3xx is not followed, and that a closed port throws a `TransportException`. Then run the SDK's calls through it with a test project.
+Run your transport against a local echo server and check that the URL, headers and body arrive byte for byte (including a query string with special characters and a non-ASCII JSON body), that a 4xx or 5xx is returned as a response, that a 3xx is not followed, and that a closed port throws a `TransportException` (with `hostUnreachable` only if you set it deliberately). Then run the SDK's calls through it with a test project.

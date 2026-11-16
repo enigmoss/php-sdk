@@ -18,6 +18,7 @@ How to handle keys, requests and webhooks safely. To report a vulnerability in t
 - `CurlTransport` always verifies TLS peers and never follows redirects. If you write your own transport, do the same: see [Custom HTTP client](custom-http-client.md).
 - A custom CA bundle or proxy is configured on `CurlTransport` (`caBundle`, `proxy`).
 - The SDK rejects base URLs with credentials, a query string or an unexpected path.
+- With `fallbackBaseUrl`, the API origin named by the fallback host is used only when the answer is signed with your project key for that very request (the request carries a one-time nonce, so a recorded answer cannot be replayed) and the origin is a plain public https host: no IP address, no `localhost`, no other port, no path. A compromised fallback host can therefore make the fallback fail, but cannot point your requests at a host of its choice. See [Configuration](configuration.md#api-origin-fallback).
 
 ## Payout IP whitelist
 

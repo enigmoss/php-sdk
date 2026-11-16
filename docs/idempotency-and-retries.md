@@ -72,6 +72,10 @@ Important consequences:
 
 Disable retries entirely with `maxRetries: 0`. The unknown-outcome rules below still apply.
 
+### Retries first, the API origin fallback second
+
+With `ClientConfig::$fallbackBaseUrl` set there is one more step after the retries. When they are over and the last attempt proves that the API host could not be reached at all (DNS, refused connection, TLS handshake, connect timeout), the client asks the fallback host for the current API origin of the project and starts the same request over on it: the same body bytes, the same `Idempotency-Key`, a fresh timestamp and signature, the attempt counter from one, the same total time limit. A request that may have been sent never takes this step, so it cannot create a second object. If the fallback host answers with an error, that error is thrown with the original network error as `getPrevious()`, and its `outcomeUnknown()` is `false`: the original request was not sent. The full rules are in [Configuration](configuration.md#api-origin-fallback).
+
 ## When retries give up
 
 After the retries are exhausted the last error is thrown. Then, in this order:

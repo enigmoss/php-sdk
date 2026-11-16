@@ -25,7 +25,7 @@ A `ClientEvent` never contains bodies, headers or secrets.
 
 | Property | Meaning |
 |---|---|
-| `type` | `ClientEventType`: `RequestSending`, `ResponseReceived`, `RetryScheduled`, `RequestFailed`. |
+| `type` | `ClientEventType`: `RequestSending`, `ResponseReceived`, `RetryScheduled`, `RequestFailed`, `OriginChanged`. |
 | `method` | HTTP method. |
 | `path` | Request path with the query, starting with `/api/v4`. |
 | `attempt` | 1-based attempt number. |
@@ -33,9 +33,15 @@ A `ClientEvent` never contains bodies, headers or secrets.
 | `requestId` | The API request id: quote it to support. |
 | `durationSeconds` | Duration of the attempt (`ResponseReceived`). |
 | `retryDelaySeconds` | Delay before the next attempt (`RetryScheduled`). |
-| `error` | The `Throwable` behind a retry or a failure. |
+| `error` | The `Throwable` behind a retry or a failure; for `OriginChanged`, the network error that started the fallback. |
+| `origin` | The API origin in use from now on (`OriginChanged`). |
+| `previousOrigin` | The API origin that could not be reached (`OriginChanged`). |
 
 The sequence for one call: `RequestSending`, then `ResponseReceived` or a thrown transport failure; on a retryable failure `RetryScheduled` and another `RequestSending`; and `RequestFailed` when the call finally fails (the exception is then thrown to you).
+
+`OriginChanged` is emitted when the [API origin fallback](configuration.md#api-origin-fallback) moves the client to another host: once, in the middle of the call that found it, followed by `RequestSending` with `attempt` 1 on the new origin. The lookup on the fallback host itself emits no events. Alert on it: it means the configured API host is unreachable from your servers.
+
+`ClientEventType` can gain cases in a minor release, as `OriginChanged` did: **keep a `default` arm** in a `match` over it.
 
 ### A custom observer
 
@@ -54,7 +60,8 @@ final class MetricsObserver implements ObserverInterface
             ClientEventType::ResponseReceived => ($this->timing)('enigmoss.request', (float) $event->durationSeconds, ['status' => (string) $event->statusCode]),
             ClientEventType::RetryScheduled => ($this->increment)('enigmoss.retry'),
             ClientEventType::RequestFailed => ($this->increment)('enigmoss.failure'),
-            ClientEventType::RequestSending => null,
+            ClientEventType::OriginChanged => ($this->increment)('enigmoss.origin_changed'),
+            default => null,
         };
     }
 }

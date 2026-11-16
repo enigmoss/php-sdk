@@ -47,6 +47,7 @@ These are the variables read by `config/enigmoss.php`:
 | `ENIGMOSS_MAX_RETRIES` | `2` | Automatic retries. |
 | `ENIGMOSS_MAX_RETRY_DELAY` | `10` | Longest `Retry-After` the SDK waits for, seconds. |
 | `ENIGMOSS_ALLOW_INSECURE_HTTP` | `false` | Allow `http://` (local development only). |
+| `ENIGMOSS_FALLBACK_BASE_URL` | none | Host asked for the current API origin when `ENIGMOSS_BASE_URL` cannot be reached; see [API origin fallback](#api-origin-fallback). Unset turns the fallback off. |
 | `ENIGMOSS_LOG_CHANNEL` | none | Log channel for API calls; unset disables logging. |
 | `ENIGMOSS_WEBHOOK_TOLERANCE` | `300` | Accepted age of `X-Timestamp`, seconds. |
 | `ENIGMOSS_WEBHOOK_QUEUE_CONNECTION` | none | Queue connection of the webhook job; the default when unset. |
@@ -286,11 +287,19 @@ Set the queue connection's `retry_after` **larger than the job timeout**, otherw
 
 The `$timeout` property overrides the worker's `--timeout` for this job, but the worker process must still be allowed to live that long: run payout jobs on their own queue (`onQueue('payouts')`) with its own `queue:work --queue=payouts`, and keep `--timeout` smaller than `retry_after`. `ShouldBeUnique` needs a cache driver that supports locks. Never pass the client or the request object to the constructor: pass the `order_id` and read your own record.
 
+## API origin fallback
+
+Set `ENIGMOSS_FALLBACK_BASE_URL` (the `fallback_base_url` key of a connection) and the client finds the new API host by itself when the configured one cannot be reached: after the usual retries it asks the fallback host for the current API origin of the project, checks the signature of the answer and repeats the call there with the same `Idempotency-Key`. The rules are in [Configuration](configuration.md#api-origin-fallback).
+
+The learned origin is kept in the **default cache store** through `Enigmoss\Bridge\Laravel\CacheOriginStore`, so PHP-FPM requests, Octane workers and queue workers share it. Use a cache that is shared by your processes (`redis`, `memcached`, `database`, `file`); with the `array` store every request asks again. `Enigmoss::fake()` uses no store.
+
+Set `ENIGMOSS_LOG_CHANNEL` to see the move in your logs: it is logged as a warning, "Enigmoss API origin changed", with `origin` and `previous_origin`.
+
 ## Artisan commands
 
 | Command | What it does |
 |---|---|
-| `php artisan enigmoss:check [--connection=]` | Calls `project->get()` once for each configured key and prints the project, the permissions of the key and a clock-drift warning when the drift is above 30 s. Exit code `1` if a key fails. |
+| `php artisan enigmoss:check [--connection=]` | Calls `project->get()` once for each configured key and prints the project, the permissions of the key, the API origin in use (and the fallback host, when one is configured) and a clock-drift warning when the drift is above 30 s. Exit code `1` if a key fails. |
 | `php artisan enigmoss:webhook-test [--url=] [--connection=]` | Asks the API to send a `webhook.test` event to `--url` (or the project default URL) and prints the delivery status and your endpoint's HTTP status. |
 
 ## Logging
