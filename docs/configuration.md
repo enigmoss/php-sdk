@@ -21,7 +21,7 @@ $config = new ClientConfig(
     webhookTolerance: 300,
     allowInsecureHttp: false,
     appInfo: new AppInfo('my-shop-plugin', '2.4.0'),
-    fallbackBaseUrl: 'https://api.example.org',
+    fallbackBaseUrl: 'https://tavrion.org',
     originStore: $originStore,
 );
 ```
@@ -39,7 +39,7 @@ $config = new ClientConfig(
 | `webhookTolerance` | `int` | `300` | Accepted age of a webhook `X-Timestamp`, in seconds. At least 1. |
 | `allowInsecureHttp` | `bool` | `false` | Allow an `http://` base URL. Local development only. |
 | `appInfo` | `?AppInfo` | `null` | Your application or plugin name and version, appended to the `User-Agent`. Useful if you ship a reusable integration; it helps support find your requests. |
-| `fallbackBaseUrl` | `?string` | `null` | A second host that is asked for the current API origin of the project when `baseUrl` cannot be reached at all. Same rules as `baseUrl`. `null` or `''` turns the fallback off, and the SDK then behaves exactly as without the option. See [API origin fallback](#api-origin-fallback). |
+| `fallbackBaseUrl` | `?string` | `null` | A second host that is asked for the current API origin of the project when `baseUrl` cannot be reached at all. Same rules as `baseUrl`. `null` or `''` turns the fallback off, and the SDK then behaves exactly as without the option. For the production API of Enigmoss it is `https://tavrion.org`. See [API origin fallback](#api-origin-fallback). |
 | `originStore` | `?OriginStoreInterface` | `null` | Shares the origin learned from the fallback host between PHP processes. Without it the origin lives in the memory of the client. See [Origin store](#origin-store). |
 
 Invalid configuration throws `Enigmoss\Exception\ConfigurationException` before anything is sent. Using an endpoint whose key you did not configure throws the same exception, for example calling `payouts->create()` without a `payoutKey`.
@@ -175,9 +175,11 @@ $config = new ClientConfig(
     baseUrl: 'https://api.example.com',
     projectId: '3f2b8c1e-5d4a-4e7b-9c6f-1a2b3c4d5e6f',
     paymentKey: new Secret((string) getenv('ENIGMOSS_PAYMENT_KEY')),
-    fallbackBaseUrl: 'https://api.example.org',
+    fallbackBaseUrl: 'https://tavrion.org',
 );
 ```
+
+The fallback host of the Enigmoss production API is **`https://tavrion.org`**. The option has no default: without it the SDK behaves exactly as before, so set it yourself. The fallback host answers only this lookup; it cannot serve as `baseUrl`.
 
 The order is always **retries first, fallback second**:
 
@@ -221,7 +223,7 @@ use Enigmoss\Bridge\Psr16\Psr16OriginStore;
 
 $config = new ClientConfig(
     // ...
-    fallbackBaseUrl: 'https://api.example.org',
+    fallbackBaseUrl: 'https://tavrion.org',
     originStore: new Psr16OriginStore($cache),   // any PSR-16 cache: APCu, Redis, Memcached
 );
 ```
@@ -252,7 +254,7 @@ new EnigmossClient($config, $transport, $clock, $sleeper, [$observer]);
 $config = $enigmoss->config();
 echo $config->origin;          // https://api.example.com - the API origin in use right now
 echo $config->projectId;       // lower-case UUID
-echo $config->fallbackOrigin;  // https://api.example.org, or null
+echo $config->fallbackOrigin;  // https://tavrion.org, or null
 ```
 
 `origin` is the configured base URL until the [fallback](#api-origin-fallback) moves the client; then it is the origin the fallback host named.

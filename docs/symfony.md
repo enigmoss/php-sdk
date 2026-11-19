@@ -206,7 +206,7 @@ enigmoss:
             fallback_base_url: '%env(default::ENIGMOSS_FALLBACK_BASE_URL)%'
 ```
 
-With `fallback_base_url` the client finds the new API host by itself when `base_url` cannot be reached: after the usual retries it asks the fallback host for the current API origin of the project, checks the signature of the answer and repeats the call there with the same `Idempotency-Key`. The rules are in [Configuration](configuration.md#api-origin-fallback).
+With `fallback_base_url` (`https://tavrion.org` for the production API of Enigmoss, e.g. `ENIGMOSS_FALLBACK_BASE_URL=https://tavrion.org`) the client finds the new API host by itself when `base_url` cannot be reached: after the usual retries it asks the fallback host for the current API origin of the project, checks the signature of the answer and repeats the call there with the same `Idempotency-Key`. The rules are in [Configuration](configuration.md#api-origin-fallback).
 
 The learned origin is kept in the `origin_cache` pool (`cache.app` by default) through `Enigmoss\Bridge\Symfony\Http\CacheOriginStore`, so PHP-FPM requests and workers share it; set `origin_cache: null` to keep it in the memory of the client only. The fallback needs the default **`transport: curl`**: with `transport: symfony` it never starts, because Symfony HttpClient does not report whether the connection was established.
 

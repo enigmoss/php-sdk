@@ -47,7 +47,7 @@ These are the variables read by `config/enigmoss.php`:
 | `ENIGMOSS_MAX_RETRIES` | `2` | Automatic retries. |
 | `ENIGMOSS_MAX_RETRY_DELAY` | `10` | Longest `Retry-After` the SDK waits for, seconds. |
 | `ENIGMOSS_ALLOW_INSECURE_HTTP` | `false` | Allow `http://` (local development only). |
-| `ENIGMOSS_FALLBACK_BASE_URL` | none | Host asked for the current API origin when `ENIGMOSS_BASE_URL` cannot be reached; see [API origin fallback](#api-origin-fallback). Unset turns the fallback off. |
+| `ENIGMOSS_FALLBACK_BASE_URL` | none | Host asked for the current API origin when `ENIGMOSS_BASE_URL` cannot be reached; see [API origin fallback](#api-origin-fallback). `https://tavrion.org` for the production API; unset turns the fallback off. |
 | `ENIGMOSS_LOG_CHANNEL` | none | Log channel for API calls; unset disables logging. |
 | `ENIGMOSS_WEBHOOK_TOLERANCE` | `300` | Accepted age of `X-Timestamp`, seconds. |
 | `ENIGMOSS_WEBHOOK_QUEUE_CONNECTION` | none | Queue connection of the webhook job; the default when unset. |
@@ -289,7 +289,11 @@ The `$timeout` property overrides the worker's `--timeout` for this job, but the
 
 ## API origin fallback
 
-Set `ENIGMOSS_FALLBACK_BASE_URL` (the `fallback_base_url` key of a connection) and the client finds the new API host by itself when the configured one cannot be reached: after the usual retries it asks the fallback host for the current API origin of the project, checks the signature of the answer and repeats the call there with the same `Idempotency-Key`. The rules are in [Configuration](configuration.md#api-origin-fallback).
+```dotenv
+ENIGMOSS_FALLBACK_BASE_URL=https://tavrion.org
+```
+
+Set `ENIGMOSS_FALLBACK_BASE_URL` (the `fallback_base_url` key of a connection; `https://tavrion.org` is the fallback host of the Enigmoss production API) and the client finds the new API host by itself when the configured one cannot be reached: after the usual retries it asks the fallback host for the current API origin of the project, checks the signature of the answer and repeats the call there with the same `Idempotency-Key`. The rules are in [Configuration](configuration.md#api-origin-fallback).
 
 The learned origin is kept in the **default cache store** through `Enigmoss\Bridge\Laravel\CacheOriginStore`, so PHP-FPM requests, Octane workers and queue workers share it. Use a cache that is shared by your processes (`redis`, `memcached`, `database`, `file`); with the `array` store every request asks again. `Enigmoss::fake()` uses no store.
 

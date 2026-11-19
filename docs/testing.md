@@ -133,7 +133,7 @@ $config = new ClientConfig(
     projectId: Fixtures::PROJECT_ID,
     paymentKey: new Secret('test-payment-secret'),
     maxRetries: 0,
-    fallbackBaseUrl: 'https://api.example.org',
+    fallbackBaseUrl: 'https://tavrion.org',
 );
 $enigmoss = new EnigmossClient($config, $transport);
 

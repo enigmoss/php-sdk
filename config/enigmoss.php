@@ -20,7 +20,8 @@ return [
             'payment_key' => env('ENIGMOSS_PAYMENT_KEY'),
             // Payouts, refunds, transfers. Leave empty if you do not send money out.
             'payout_key' => env('ENIGMOSS_PAYOUT_KEY'),
-            // Optional host asked for the current API origin when base_url cannot be reached.
+            // Optional host asked for the current API origin when base_url cannot be reached
+            // (https://tavrion.org for the production API).
             // The origin it names is kept in the default cache store.
             'fallback_base_url' => env('ENIGMOSS_FALLBACK_BASE_URL'),
         ],
