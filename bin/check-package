@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+mkdir "$work/package" "$work/consumer"
+
+# The SDK may be a standalone checkout or a subtree of the SDK workspace.
+prefix=$(git rev-parse --show-prefix)
+root=$(git rev-parse --show-toplevel)
+tree=HEAD${prefix:+:${prefix%/}}
+git -C "$root" archive --format=tar --output="$work/package.tar" "$tree"
+tar -xf "$work/package.tar" -C "$work/package"
+test -f "$work/package/docs/webhooks.md"
+test -d "$work/package/examples"
+test ! -e "$work/package/tests"
+
+cd "$work/consumer"
+printf '%s\n' '{"name":"check/app","version":"1.0.0","repositories":{"packagist.org":false}}' > composer.json
+composer config repositories.sdk path "$work/package"
+COMPOSER_MIRROR_PATH_REPOS=1 COMPOSER_DISABLE_NETWORK=1 \
+  composer require 'enigmoss/php-sdk:*@dev' --no-interaction --no-progress --no-audit
+php -r 'require "vendor/autoload.php"; new Enigmoss\ClientConfig("https://api.example.com", "3f2b8c1e-5d4a-4e7b-9c6f-1a2b3c4d5e6f", new Enigmoss\Secret("test"));'

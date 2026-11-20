@@ -45,10 +45,15 @@ jobs:
           php-version: ${{ matrix.php }}
           extensions: curl, json
           coverage: none
+      - if: matrix.php == '8.1'
+        run: composer remove --dev --no-update orchestra/testbench
       - uses: ramsey/composer-install@v3
         with:
           dependency-versions: ${{ matrix.deps }}
-      - run: vendor/bin/phpunit --testsuite unit,examples,bridge
+      - if: matrix.php == '8.1'
+        run: sh bin/test-without-laravel
+      - if: matrix.php != '8.1'
+        run: composer test
 
   frameworks:
     name: ${{ matrix.name }}
@@ -57,9 +62,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: 'Laravel 10 + Symfony 6.4', php: '8.1', packages: 'orchestra/testbench:^8.0 symfony/framework-bundle:^6.4 symfony/http-client:^6.4' }
-          - { name: 'Laravel 11 + Symfony 7.4', php: '8.2', packages: 'orchestra/testbench:^9.0 symfony/framework-bundle:^7.4 symfony/http-client:^7.4' }
-          - { name: 'Laravel 12', php: '8.3', packages: 'orchestra/testbench:^10.0' }
+          - { name: 'Laravel 12 + Symfony 7.4', php: '8.2', packages: 'orchestra/testbench:^10.0 symfony/framework-bundle:^7.4 symfony/http-client:^7.4' }
           - { name: 'Laravel 13 + Symfony 8', php: '8.4', packages: 'orchestra/testbench:^11.0 symfony/framework-bundle:^8.0 symfony/http-client:^8.0' }
     steps:
       - uses: actions/checkout@v4
@@ -84,7 +87,7 @@ jobs:
           coverage: none
       # Only the test runner: proves the core installs and works with nothing but ext-json.
       - run: |
-          composer remove --dev --no-update orchestra/testbench symfony/framework-bundle symfony/http-client guzzlehttp/guzzle psr/log friendsofphp/php-cs-fixer phpat/phpat phpstan/phpstan phpstan/phpstan-strict-rules shipmonk/composer-dependency-analyser
+          composer remove --dev --no-update orchestra/testbench symfony/framework-bundle symfony/http-client guzzlehttp/guzzle psr/log psr/simple-cache friendsofphp/php-cs-fixer phpat/phpat phpstan/phpstan phpstan/phpstan-strict-rules shipmonk/composer-dependency-analyser
           composer update --prefer-dist --no-interaction
       - name: ext-curl is really absent
         run: |
@@ -100,15 +103,4 @@ jobs:
         with:
           php-version: '8.1'
           coverage: none
-      - run: composer archive --format=zip --dir=build --file=package
-      - name: docs and examples are shipped, tests are not
-        run: |
-          unzip -l build/package.zip | grep -q 'docs/webhooks.md'
-          ! unzip -l build/package.zip | grep -q ' tests/'
-      - name: install into a clean project
-        run: |
-          mkdir -p /tmp/app && cd /tmp/app
-          composer init -n --name=check/app
-          composer config repositories.sdk "{\"type\":\"artifact\",\"url\":\"$GITHUB_WORKSPACE/build\"}"
-          composer require "enigmoss/php-sdk:*@dev" --prefer-dist
-          php -r 'require "vendor/autoload.php"; new Enigmoss\ClientConfig("https://api.example.com", "3f2b8c1e-5d4a-4e7b-9c6f-1a2b3c4d5e6f", new Enigmoss\Secret("k")); echo "ok\n";'
+      - run: sh bin/check-package

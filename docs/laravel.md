@@ -2,6 +2,9 @@
 
 Supported: Laravel 10, 11, 12 and 13. The service provider and the `Enigmoss` facade are auto-discovered; there is nothing to register.
 
+CI exercises the Laravel bridge on Laravel 12 and 13. On PHP 8.1, CI covers the SDK core,
+examples, and the PSR and Symfony bridges.
+
 The provider registers only lazy bindings, so `package:discover` and `config:cache` work without `ENIGMOSS_*` variables set. A missing variable fails with a `ConfigurationException` when the client is first used.
 
 ## Install and configure

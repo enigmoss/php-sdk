@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.0]
+
 ### Added
 
 - `EnigmossClient` with services for the Project API v4: `project`, `payments`, `wallets`, `refunds`, `payouts`, `payoutMethods`, `paymentMethods`, `exchangeRates`, `balances`, `transactions`, `transfers`, `events` and `webhooks`.
