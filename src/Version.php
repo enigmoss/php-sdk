@@ -9,7 +9,7 @@ namespace Enigmoss;
  */
 final class Version
 {
-    public const SDK = '0.1.0';
+    public const SDK = '1.0.0';
 
     private function __construct() {}
 }
